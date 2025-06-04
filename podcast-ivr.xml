@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MultilevelIVR>
+  <Menu>
+    <Extension>2000</Extension>
+    <Name>Podcast Main Menu</Name>
+    <Language>English (United States)</Language>
+    <Prompt>
+      <Name>podcast-main-menu.mp3</Name>
+      <Text>Welcome to the Podcast Hotline! Your source for on-demand audio content. Press 1 for today's Daily Tech News, featuring the latest technology updates and industry insights. Press 2 for Weather and Traffic, your local conditions and travel updates. Press 3 for Daily Stories, featuring engaging narratives and premium content. Press 9 to repeat this menu. Press 0 to speak with a representative.</Text>
+      <TextToSpeech>true</TextToSpeech>
+    </Prompt>
+    <CallHandling>
+      <DigitKeyInput>
+        <Key>1</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2001</Destination>
+      </DigitKeyInput>
+      <DigitKeyInput>
+        <Key>2</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2002</Destination>
+      </DigitKeyInput>
+      <DigitKeyInput>
+        <Key>3</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2003</Destination>
+      </DigitKeyInput>
+      <DigitKeyInput>
+        <Key>9</Key>
+        <Action>RepeatMenuGreeting</Action>
+      </DigitKeyInput>
+      <DigitKeyInput>
+        <Key>0</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>101</Destination>
+      </DigitKeyInput>
+      <SpecialKeyInput>
+        <Key>*</Key>
+        <Action>RepeatMenuGreeting</Action>
+      </SpecialKeyInput>
+      <NoInput>
+        <Action>RepeatMenuGreeting</Action>
+      </NoInput>
+    </CallHandling>
+  </Menu>
+  <Menu>
+    <Extension>2001</Extension>
+    <Name>Daily Tech News</Name>
+    <Language>English (United States)</Language>
+    <Prompt>
+      <Name>tech-news-intro.mp3</Name>
+      <Text>You selected Daily Tech News. This episode is brought to you by TechCorp Solutions, your partner in digital transformation.</Text>
+      <TextToSpeech>true</TextToSpeech>
+    </Prompt>
+    <CallHandling>
+      <DigitKeyInput>
+        <Key>1</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2101</Destination>
+      </DigitKeyInput>
+      <DigitKeyInput>
+        <Key>9</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </DigitKeyInput>
+      <SpecialKeyInput>
+        <Key>#</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </SpecialKeyInput>
+      <NoInput>
+        <Action>ForwardToExtension</Action>
+        <Destination>2101</Destination>
+      </NoInput>
+    </CallHandling>
+  </Menu>
+  <Menu>
+    <Extension>2002</Extension>
+    <Name>Weather and Traffic</Name>
+    <Language>English (United States)</Language>
+    <Prompt>
+      <Name>weather-intro.mp3</Name>
+      <Text>You selected Weather and Traffic. This update is sponsored by Dallas Auto Group, serving all your automotive needs.</Text>
+      <TextToSpeech>true</TextToSpeech>
+    </Prompt>
+    <CallHandling>
+      <DigitKeyInput>
+        <Key>1</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2102</Destination>
+      </DigitKeyInput>
+      <DigitKeyInput>
+        <Key>9</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </DigitKeyInput>
+      <SpecialKeyInput>
+        <Key>#</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </SpecialKeyInput>
+      <NoInput>
+        <Action>ForwardToExtension</Action>
+        <Destination>2102</Destination>
+      </NoInput>
+    </CallHandling>
+  </Menu>
+  <Menu>
+    <Extension>2003</Extension>
+    <Name>Daily Stories</Name>
+    <Language>English (United States)</Language>
+    <Prompt>
+      <Name>stories-intro.mp3</Name>
+      <Text>You selected Daily Stories. Today's story is presented by StoryBrand Publishing, where every story matters.</Text>
+      <TextToSpeech>true</TextToSpeech>
+    </Prompt>
+    <CallHandling>
+      <DigitKeyInput>
+        <Key>1</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2103</Destination>
+      </DigitKeyInput>
+      <DigitKeyInput>
+        <Key>9</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </DigitKeyInput>
+      <SpecialKeyInput>
+        <Key>#</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </SpecialKeyInput>
+      <NoInput>
+        <Action>ForwardToExtension</Action>
+        <Destination>2103</Destination>
+      </NoInput>
+    </CallHandling>
+  </Menu>
+  <Menu>
+    <Extension>2101</Extension>
+    <Name>Tech News Podcast Player</Name>
+    <Language>English (United States)</Language>
+    <Prompt>
+      <Name>tech-news-latest.mp3</Name>
+      <Text>Playing Daily Tech News. Here are today's top technology stories. Apple announces new AI features coming to iOS. Google unveils quantum computing breakthrough. Tesla reports record quarterly deliveries. Microsoft Azure gains new enterprise features. Thank you for listening to Daily Tech News. Press 1 to return to the main menu or hang up to end your call.</Text>
+      <TextToSpeech>false</TextToSpeech>
+    </Prompt>
+    <CallHandling>
+      <DigitKeyInput>
+        <Key>1</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </DigitKeyInput>
+      <SpecialKeyInput>
+        <Key>#</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </SpecialKeyInput>
+      <NoInput>
+        <Action>Disconnect</Action>
+      </NoInput>
+    </CallHandling>
+  </Menu>
+  <Menu>
+    <Extension>2102</Extension>
+    <Name>Weather Podcast Player</Name>
+    <Language>English (United States)</Language>
+    <Prompt>
+      <Name>weather-latest.mp3</Name>
+      <Text>Good morning! This is your Dallas weather and traffic update. Currently, it's 72 degrees and partly cloudy. Humidity is at 65 percent with winds at 8 miles per hour. Traffic is moving smoothly on I-35 and I-75 with no major incidents to report. Have a great day, and drive safely! Press 1 to return to the main menu or hang up to end your call.</Text>
+      <TextToSpeech>false</TextToSpeech>
+    </Prompt>
+    <CallHandling>
+      <DigitKeyInput>
+        <Key>1</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </DigitKeyInput>
+      <SpecialKeyInput>
+        <Key>#</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </SpecialKeyInput>
+      <NoInput>
+        <Action>Disconnect</Action>
+      </NoInput>
+    </CallHandling>
+  </Menu>
+  <Menu>
+    <Extension>2103</Extension>
+    <Name>Stories Podcast Player</Name>
+    <Language>English (United States)</Language>
+    <Prompt>
+      <Name>story-latest.mp3</Name>
+      <Text>Welcome to Daily Stories. Today's story takes us to a small town where a local baker discovered an old recipe that changes everything. But that's just the beginning of our tale. Thank you for listening to Daily Stories. We hope you enjoyed today's tale. Press 1 to explore more podcasts or hang up when you're ready.</Text>
+      <TextToSpeech>false</TextToSpeech>
+    </Prompt>
+    <CallHandling>
+      <DigitKeyInput>
+        <Key>1</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </DigitKeyInput>
+      <SpecialKeyInput>
+        <Key>#</Key>
+        <Action>ForwardToExtension</Action>
+        <Destination>2000</Destination>
+      </SpecialKeyInput>
+      <NoInput>
+        <Action>Disconnect</Action>
+      </NoInput>
+    </CallHandling>
+  </Menu>
+</MultilevelIVR>
