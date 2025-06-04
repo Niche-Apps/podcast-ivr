@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { RingCentral } = require('@ringcentral/sdk');
+const SDK = require('@ringcentral/sdk');
 const axios = require('axios');
 
 const app = express();
@@ -11,7 +11,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // RingCentral configuration
-const rc = new RingCentral({
+const rc = new SDK({
   server: process.env.RC_SERVER_URL,
   clientId: process.env.RC_CLIENT_ID,
   clientSecret: process.env.RC_CLIENT_SECRET
@@ -230,4 +230,4 @@ app.use((req, res) => {
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   await initializeRingCentral();
-});// Force redeploy Tue Jun  3 22:12:42 CDT 2025
+});
