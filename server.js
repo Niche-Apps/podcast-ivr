@@ -112,6 +112,9 @@ async function handleTelephonyEvent(webhookData) {
     
     console.log(`Telephony event: ${event}`);
     
+    // 🎯 TRACK PODCAST DOWNLOAD FOR AD REVENUE
+    await trackPodcastDownload(webhookData);
+    
     // Extract session/call information
     const sessionId = body.telephonySessionId || body.sessionId || 'unknown';
     const status = body.status?.code;
@@ -138,6 +141,122 @@ async function handleTelephonyEvent(webhookData) {
   } catch (error) {
     console.error('Error handling telephony event:', error);
   }
+}
+
+// 💰 TRACK EACH CALL AS PODCAST DOWNLOAD FOR AD REVENUE
+async function trackPodcastDownload(webhookData) {
+  try {
+    const body = webhookData.body || {};
+    const parties = body.parties || [];
+    const mainParty = parties[0] || {};
+    
+    const extensionId = mainParty.extensionId;
+    const callerNumber = mainParty.from?.phoneNumber;
+    const status = mainParty.status?.code;
+    
+    // Only track when call connects to podcast extension
+    if (extensionId && ['1', '2', '3'].includes(extensionId) && status === 'Disconnected') {
+      
+      const podcastChannels = {
+        '1': { name: 'Daily Tech News', adRate: 0.50, sponsor: 'TechCorp' },
+        '2': { name: 'Weather & Traffic', adRate: 0.30, sponsor: 'LocalBiz' },
+        '3': { name: 'Daily Stories', adRate: 0.75, sponsor: 'StoryBrand' }
+      };
+      
+      const podcast = podcastChannels[extensionId];
+      
+      if (podcast) {
+        const downloadEvent = {
+          timestamp: new Date().toISOString(),
+          callId: body.sessionId || body.telephonySessionId,
+          callerNumber: callerNumber,
+          callerLocation: getLocationFromPhone(callerNumber),
+          podcastChannel: extensionId,
+          podcastName: podcast.name,
+          sponsor: podcast.sponsor,
+          adRevenue: podcast.adRate,
+          callDuration: body.duration || 0
+        };
+        
+        // Log the tracked download
+        console.log(`💰 PODCAST DOWNLOAD TRACKED:`, JSON.stringify(downloadEvent, null, 2));
+        
+        // Send to analytics/billing system
+        await logPodcastDownload(downloadEvent);
+        
+        // Update real-time sponsor dashboard
+        await updateSponsorMetrics(downloadEvent);
+        
+        console.log(`📈 AD REVENUE: ${podcast.adRate} from ${podcast.sponsor} for "${podcast.name}"`);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error tracking podcast download:', error);
+  }
+}
+
+// Get caller location from area code
+function getLocationFromPhone(phoneNumber) {
+  if (!phoneNumber) return 'Unknown';
+  
+  const areaCode = phoneNumber.substring(2, 5);
+  const locationMap = {
+    '904': 'Jacksonville, FL',
+    '918': 'Tulsa, OK', 
+    '212': 'New York, NY',
+    '415': 'San Francisco, CA',
+    '512': 'Austin, TX',
+    '404': 'Atlanta, GA'
+  };
+  
+  return locationMap[areaCode] || `Area Code ${areaCode}`;
+}
+
+// Log download for billing/reporting
+async function logPodcastDownload(downloadEvent) {
+  try {
+    // Save to database, send to analytics, update billing
+    console.log(`✅ Download logged: ${downloadEvent.podcastName} - ${downloadEvent.adRevenue}`);
+    
+    // Here you would:
+    // 1. Save to database for sponsor billing
+    // 2. Send to analytics service
+    // 3. Update real-time dashboard
+    // 4. Trigger sponsor notifications
+    
+  } catch (error) {
+    console.error('Error logging download:', error);
+  }
+}
+
+// Update sponsor dashboard in real-time
+async function updateSponsorMetrics(downloadEvent) {
+  try {
+    const sponsorUpdate = {
+      sponsor: downloadEvent.sponsor,
+      totalDownloadsToday: await getTodayDownloadCount(downloadEvent.sponsor),
+      totalRevenueToday: await getTodayRevenue(downloadEvent.sponsor),
+      newDownload: downloadEvent
+    };
+    
+    console.log(`📊 SPONSOR METRICS: ${downloadEvent.sponsor} - ${sponsorUpdate.totalDownloadsToday} downloads today`);
+    
+    // Send to sponsor dashboard via websocket/API
+    
+  } catch (error) {
+    console.error('Error updating sponsor metrics:', error);
+  }
+}
+
+async function getTodayDownloadCount(sponsor) {
+  // Get today's download count for sponsor from database
+  return Math.floor(Math.random() * 100); // Placeholder
+}
+
+async function getTodayRevenue(sponsor) {
+  // Calculate today's revenue for sponsor
+  return (Math.random() * 50).toFixed(2); // Placeholder
 }
 
 // Handle call events (updated)
