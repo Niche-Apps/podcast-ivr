@@ -1,47 +1,50 @@
 # 📞 RingCentral Setup Instructions
 
-## 🎯 **Option 1: Direct Webhook (Fastest)**
+## 🎯 **EASIEST METHOD: Manual Auto-Receptionist (5 minutes)**
+
+**Skip the XML files - just create the IVR manually in RingCentral Admin:**
 
 1. **Login to RingCentral Admin:**
    - Go to `admin.ringcentral.com`
    - Login with your account
 
-2. **Configure Phone Number:**
+2. **Create Auto-Receptionist:**
+   - Navigate to **Phone System → Auto-Receptionist**
+   - Click **"Create Auto-Receptionist"**
+   - **Name:** `Podcast Hotline`
+   - **Company Greeting:** Select **"Record or upload audio"** OR **"Use text-to-speech"**
+   - **Greeting Text:** 
+     ```
+     Welcome to the Podcast Hotline! Press 1 for Daily Tech News, 
+     Press 2 for Weather and Traffic, Press 3 for Daily Stories, 
+     Press 9 to repeat this menu, or Press 0 for a representative.
+     ```
+
+3. **Configure Menu Options:**
+   - **Press 1:** Send caller to → Extension → `101`
+   - **Press 2:** Send caller to → Extension → `102`  
+   - **Press 3:** Send caller to → Extension → `103`
+   - **Press 9:** Repeat company greeting
+   - **Press 0:** Send caller to → Extension → `101` (operator)
+
+4. **Set Business Hours:** 24/7 (all days, all hours)
+
+5. **Assign Phone Number:**
+   - **Phone System → Phone Numbers**
+   - Find `(904) 371-2672`
+   - **"Answered by"** → Select your **"Podcast Hotline"** auto-receptionist
+   - **Save**
+
+---
+
+## 🎯 **Alternative: Direct Webhook (Advanced)**
+
+1. **Configure Phone Number:**
    - Navigate to **Phone System → Phone Numbers**
    - Find your number `(904) 371-2672`
    - Click **Edit** → **Call Handling**
    - Set **"During Business Hours"** to: **"Forward to External Number"**
    - Enter: `https://podcast-ivr-production.up.railway.app/webhook/ivr-main`
-
----
-
-## 🎛️ **Option 2: Auto-Receptionist (Recommended)**
-
-### **Step 1: Create Auto-Receptionist**
-1. **Phone System → Auto-Receptionist → Create New**
-2. **Name:** `Podcast Hotline`
-3. **Greeting:** Select **"Text-to-Speech"**
-4. **Greeting Text:** 
-   ```
-   Welcome to the Podcast Hotline! Press 1 for Daily Tech News, 
-   Press 2 for Weather and Traffic, Press 3 for Daily Stories, 
-   Press 9 to repeat this menu, or Press 0 for a representative.
-   ```
-
-### **Step 2: Configure Key Mappings**
-- **Press 1:** Transfer to Extension `101` (Tech News)
-- **Press 2:** Transfer to Extension `102` (Weather)  
-- **Press 3:** Transfer to Extension `103` (Stories)
-- **Press 9:** Repeat Menu
-- **Press 0:** Transfer to Operator (Extension `101`)
-
-### **Step 3: Set Business Hours**
-- **All Days:** `00:00` to `23:59` (24/7 operation)
-
-### **Step 4: Assign Phone Number**
-- **Phone System → Phone Numbers**
-- Find `(904) 371-2672`
-- Set **"Answered By"** to your new **"Podcast Hotline"** auto-receptionist
 
 ---
 

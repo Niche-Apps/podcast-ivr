@@ -1,0 +1,6 @@
+Menu Name,Greeting Type,Greeting Text,Key,Action Type,Destination,Description
+Podcast Hotline,TextToSpeech,"Welcome to the Podcast Hotline! Press 1 for Daily Tech News, Press 2 for Weather and Traffic, Press 3 for Daily Stories, Press 9 to repeat this menu, or Press 0 for a representative.",1,Transfer,101,Daily Tech News
+Podcast Hotline,TextToSpeech,"Welcome to the Podcast Hotline! Press 1 for Daily Tech News, Press 2 for Weather and Traffic, Press 3 for Daily Stories, Press 9 to repeat this menu, or Press 0 for a representative.",2,Transfer,102,Weather and Traffic
+Podcast Hotline,TextToSpeech,"Welcome to the Podcast Hotline! Press 1 for Daily Tech News, Press 2 for Weather and Traffic, Press 3 for Daily Stories, Press 9 to repeat this menu, or Press 0 for a representative.",3,Transfer,103,Daily Stories
+Podcast Hotline,TextToSpeech,"Welcome to the Podcast Hotline! Press 1 for Daily Tech News, Press 2 for Weather and Traffic, Press 3 for Daily Stories, Press 9 to repeat this menu, or Press 0 for a representative.",9,Repeat,,Repeat Menu
+Podcast Hotline,TextToSpeech,"Welcome to the Podcast Hotline! Press 1 for Daily Tech News, Press 2 for Weather and Traffic, Press 3 for Daily Stories, Press 9 to repeat this menu, or Press 0 for a representative.",0,Transfer,101,Operator

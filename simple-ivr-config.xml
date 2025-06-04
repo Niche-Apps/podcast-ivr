@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AutoReceptionist>
+  <Name>Podcast Hotline</Name>
+  <Greeting>Welcome to the Podcast Hotline! Press 1 for Daily Tech News, Press 2 for Weather and Traffic, Press 3 for Daily Stories, Press 9 to repeat this menu, or Press 0 for a representative.</Greeting>
+  <Options>
+    <Option key="1" action="transfer" destination="101">Daily Tech News</Option>
+    <Option key="2" action="transfer" destination="102">Weather and Traffic</Option>
+    <Option key="3" action="transfer" destination="103">Daily Stories</Option>
+    <Option key="9" action="repeat">Repeat Menu</Option>
+    <Option key="0" action="transfer" destination="101">Operator</Option>
+  </Options>
+</AutoReceptionist>
