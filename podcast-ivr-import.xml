@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<IVRMenuList>
+  <!-- Main Podcast Hotline Menu -->
+  <IVRMenu>
+    <Name>Podcast Hotline</Name>
+    <GreetingType>TextToSpeech</GreetingType>
+    <GreetingText>Welcome to the Podcast Hotline! Your source for on-demand audio content. Press 1 for today's Daily Tech News, featuring the latest technology updates and industry insights. Press 2 for Weather and Traffic, your local conditions and travel updates. Press 3 for Daily Stories, featuring engaging narratives and premium content. Press 9 to repeat this menu. Press 0 to speak with a representative. Please make your selection now.</GreetingText>
+    <KeyMappings>
+      <KeyMapping>
+        <Key>1</Key>
+        <Action>TransferToWebhook</Action>
+        <WebhookUrl>https://podcast-ivr-production.up.railway.app/webhook/ivr-response</WebhookUrl>
+        <Parameters>Digits=1</Parameters>
+      </KeyMapping>
+      <KeyMapping>
+        <Key>2</Key>
+        <Action>TransferToWebhook</Action>
+        <WebhookUrl>https://podcast-ivr-production.up.railway.app/webhook/ivr-response</WebhookUrl>
+        <Parameters>Digits=2</Parameters>
+      </KeyMapping>
+      <KeyMapping>
+        <Key>3</Key>
+        <Action>TransferToWebhook</Action>
+        <WebhookUrl>https://podcast-ivr-production.up.railway.app/webhook/ivr-response</WebhookUrl>
+        <Parameters>Digits=3</Parameters>
+      </KeyMapping>
+      <KeyMapping>
+        <Key>9</Key>
+        <Action>RepeatMenu</Action>
+      </KeyMapping>
+      <KeyMapping>
+        <Key>0</Key>
+        <Action>TransferToExtension</Action>
+        <Extension>101</Extension>
+      </KeyMapping>
+    </KeyMappings>
+    <TimeoutAction>RepeatMenu</TimeoutAction>
+    <InvalidInputAction>RepeatMenu</InvalidInputAction>
+  </IVRMenu>
+</IVRMenuList>
+
+<!-- 
+SIMPLIFIED SETUP INSTRUCTIONS:
+
+Option 1: Direct Webhook Routing (Recommended)
+1. In RingCentral Admin Portal (admin.ringcentral.com)
+2. Go to Phone System → Phone Numbers
+3. Find your number (904) 371-2672
+4. Set Call Handling → Forward to URL: 
+   https://podcast-ivr-production.up.railway.app/webhook/ivr-main
+
+Option 2: Create Auto-Receptionist
+1. Phone System → Auto-Receptionist → Create New
+2. Name: "Podcast Hotline"
+3. Greeting: Use Text-to-Speech with message above
+4. Key Mappings:
+   - Press 1: Forward to Extension 101 (Tech News)
+   - Press 2: Forward to Extension 102 (Weather)  
+   - Press 3: Forward to Extension 103 (Stories)
+   - Press 9: Repeat Menu
+   - Press 0: Transfer to Operator
+5. Assign phone number (904) 371-2672 to this IVR
+
+Extensions Setup:
+- Extension 101: Set greeting to play tech news audio
+- Extension 102: Set greeting to play weather audio  
+- Extension 103: Set greeting to play stories audio
+
+Your Railway app endpoints:
+- Main Menu: https://podcast-ivr-production.up.railway.app/webhook/ivr-main
+- Responses: https://podcast-ivr-production.up.railway.app/webhook/ivr-response
+- Audio Files: https://podcast-ivr-production.up.railway.app/audio/filename.mp3
+-->

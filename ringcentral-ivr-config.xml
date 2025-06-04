@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- RingCentral Auto-Receptionist Configuration -->
+<AutoReceptionist>
+  <Name>Podcast Hotline</Name>
+  <Language>en-US</Language>
+  
+  <!-- Business Hours Configuration -->
+  <BusinessHours>
+    <Monday>
+      <StartTime>00:00</StartTime>
+      <EndTime>23:59</EndTime>
+    </Monday>
+    <Tuesday>
+      <StartTime>00:00</StartTime>
+      <EndTime>23:59</EndTime>
+    </Tuesday>
+    <Wednesday>
+      <StartTime>00:00</StartTime>
+      <EndTime>23:59</EndTime>
+    </Wednesday>
+    <Thursday>
+      <StartTime>00:00</StartTime>
+      <EndTime>23:59</EndTime>
+    </Thursday>
+    <Friday>
+      <StartTime>00:00</StartTime>
+      <EndTime>23:59</EndTime>
+    </Friday>
+    <Saturday>
+      <StartTime>00:00</StartTime>
+      <EndTime>23:59</EndTime>
+    </Saturday>
+    <Sunday>
+      <StartTime>00:00</StartTime>
+      <EndTime>23:59</EndTime>
+    </Sunday>
+  </BusinessHours>
+  
+  <!-- Main Menu Greeting -->
+  <Greeting>
+    <Type>TextToSpeech</Type>
+    <Text>Welcome to the Podcast Hotline! Your source for on-demand audio content. Press 1 for today's Daily Tech News, featuring the latest technology updates and industry insights. Press 2 for Weather and Traffic, your local conditions and travel updates. Press 3 for Daily Stories, featuring engaging narratives and premium content. Press 9 to repeat this menu, or press 0 to speak with a representative.</Text>
+  </Greeting>
+  
+  <!-- Key Press Actions -->
+  <KeyPressActions>
+    <KeyPress>
+      <Key>1</Key>
+      <Action>TransferToExtension</Action>
+      <TargetExtension>101</TargetExtension>
+      <Description>Daily Tech News</Description>
+    </KeyPress>
+    <KeyPress>
+      <Key>2</Key>
+      <Action>TransferToExtension</Action>
+      <TargetExtension>102</TargetExtension>
+      <Description>Weather and Traffic</Description>
+    </KeyPress>
+    <KeyPress>
+      <Key>3</Key>
+      <Action>TransferToExtension</Action>
+      <TargetExtension>103</TargetExtension>
+      <Description>Daily Stories</Description>
+    </KeyPress>
+    <KeyPress>
+      <Key>9</Key>
+      <Action>RepeatGreeting</Action>
+      <Description>Repeat Menu</Description>
+    </KeyPress>
+    <KeyPress>
+      <Key>0</Key>
+      <Action>TransferToOperator</Action>
+      <TargetExtension>101</TargetExtension>
+      <Description>Speak with Representative</Description>
+    </KeyPress>
+  </KeyPressActions>
+  
+  <!-- Default Actions -->
+  <NoInputAction>RepeatGreeting</NoInputAction>
+  <InvalidInputAction>RepeatGreeting</InvalidInputAction>
+  <Timeout>10</Timeout>
+  <MaxRetries>3</MaxRetries>
+</AutoReceptionist>
