@@ -1,0 +1,11 @@
+Good day and welcome to the Podcast Hotline! Your premier source for on-demand audio content. 
+
+Please press 1 for today's Daily Tech News, featuring the latest technology updates and industry insights from across the globe.
+
+Press 2 for Weather and Traffic, providing you with current local conditions and travel updates.
+
+Press 3 for Daily Stories, featuring engaging narratives and premium storytelling content.
+
+Press 9 to repeat this menu, or press 0 to speak with one of our representatives.
+
+Please make your selection now.
