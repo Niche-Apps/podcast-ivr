@@ -74,6 +74,14 @@ app.get('/test', (req, res) => {
 // Webhook endpoint for RingCentral events
 app.post('/webhook', async (req, res) => {
   try {
+    // Handle validation token (required for webhook creation)
+    if (req.headers['validation-token']) {
+      console.log('Validation request received');
+      res.setHeader('Validation-Token', req.headers['validation-token']);
+      res.status(200).send();
+      return;
+    }
+
     console.log('Webhook received:', JSON.stringify(req.body, null, 2));
     
     const events = req.body.body || [];
