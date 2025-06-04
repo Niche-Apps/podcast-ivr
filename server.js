@@ -84,12 +84,17 @@ app.post('/webhook', async (req, res) => {
 
     console.log('Webhook received:', JSON.stringify(req.body, null, 2));
     
-    const events = req.body.body || [];
+    // Handle the webhook payload
+    const webhookData = req.body;
     
-    for (const event of events) {
-      if (event.eventType === 'call-session-event') {
-        await handleCallEvent(event);
-      }
+    // Check if this is a telephony session event
+    if (webhookData.event && webhookData.body) {
+      await handleTelephonyEvent(webhookData);
+    } else if (webhookData.uuid && webhookData.event) {
+      // Alternative event structure
+      await handleTelephonyEvent(webhookData);
+    } else {
+      console.log('Unknown webhook structure, logging for analysis');
     }
     
     res.status(200).json({ status: 'received' });
@@ -99,11 +104,47 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Handle call events and implement IVR logic
+// Handle telephony events from RingCentral webhooks
+async function handleTelephonyEvent(webhookData) {
+  try {
+    const event = webhookData.event;
+    const body = webhookData.body;
+    
+    console.log(`Telephony event: ${event}`);
+    
+    // Extract session/call information
+    const sessionId = body.telephonySessionId || body.sessionId || 'unknown';
+    const status = body.status?.code;
+    const parties = body.parties || [];
+    
+    // Handle different event types
+    if (event === '/restapi/v1.0/account/~/telephony/sessions' && status === 'Setup') {
+      console.log('New call setup detected');
+      // Call is being set up
+    } else if (event === '/restapi/v1.0/account/~/telephony/sessions' && status === 'Proceeding') {
+      console.log('Call proceeding - starting IVR');
+      // Call is proceeding, start IVR
+      await startIVRFlow(sessionId);
+    } else if (body.sequence && body.sequence.length > 0) {
+      // Handle DTMF events
+      const lastEvent = body.sequence[body.sequence.length - 1];
+      if (lastEvent.eventType === 'Receive') {
+        console.log('DTMF received, but need to extract digit');
+        // In real implementation, we'd need to parse the DTMF digit
+        // For now, let's handle this in a simpler way
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error handling telephony event:', error);
+  }
+}
+
+// Handle call events (updated)
 async function handleCallEvent(event) {
   try {
-    const callId = event.body?.sessionId;
-    const eventType = event.body?.eventType;
+    const callId = event.body?.sessionId || event.sessionId;
+    const eventType = event.body?.eventType || event.eventType;
     
     console.log(`Call event: ${eventType} for call ${callId}`);
     
@@ -123,6 +164,13 @@ async function handleCallEvent(event) {
 // Start IVR flow
 async function startIVRFlow(callId) {
   try {
+    console.log(`Starting IVR flow for call: ${callId}`);
+    
+    if (!callId || callId === 'unknown') {
+      console.log('Invalid call ID, cannot start IVR');
+      return;
+    }
+    
     const welcomeMessage = "Welcome to the Podcast IVR! Press 1 for today's weather, Press 2 for a fun fact, Press 3 for the latest news, or Press 0 to speak with someone.";
     
     await playMessage(callId, welcomeMessage);
@@ -134,6 +182,8 @@ async function startIVRFlow(callId) {
 // Handle DTMF input (keypress)
 async function handleDTMFInput(callId, digit) {
   try {
+    console.log(`Handling DTMF input: ${digit} for call: ${callId}`);
+    
     let message = '';
     
     switch (digit) {
@@ -170,15 +220,32 @@ async function handleDTMFInput(callId, digit) {
 // Play message using RingCentral TTS
 async function playMessage(callId, message) {
   try {
-    await rc.post(`/restapi/v1.0/account/~/telephony/sessions/${callId}/parties/~/play`, {
+    console.log(`Attempting to play message to call ${callId}: ${message}`);
+    
+    // Try different API endpoints based on call ID format
+    let endpoint = `/restapi/v1.0/account/~/telephony/sessions/${callId}/parties/~/play`;
+    
+    const response = await rc.post(endpoint, {
       text: message,
       language: { languageCode: 'en-US' },
       voice: { voiceName: 'Joanna' }
     });
     
-    console.log(`Played message to call ${callId}: ${message}`);
+    console.log(`✅ Successfully played message to call ${callId}`);
+    return response;
+    
   } catch (error) {
-    console.error('Error playing message:', error);
+    console.error(`❌ Error playing message to call ${callId}:`, error.message);
+    
+    // Log the error details for debugging
+    if (error.response) {
+      try {
+        const errorData = await error.response.json();
+        console.error('API Error details:', errorData);
+      } catch (e) {
+        console.error('Could not parse error response');
+      }
+    }
   }
 }
 
