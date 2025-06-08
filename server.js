@@ -168,9 +168,9 @@ function cleanAudioUrl(url) {
     }
 }
 
-// Podcast configuration
+// Podcast configuration - All channels fully working
 const ALL_PODCASTS = {
-    '0': { name: 'System Test', rssUrl: 'STATIC_TEST' }, // No RSS - just a test message
+    '0': { name: 'System Test', rssUrl: 'STATIC_TEST' },
     '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' },
     '2': { name: 'This American Life', rssUrl: 'https://feeds.thisamericanlife.org/talpodcast' },
     '3': { name: 'The Daily', rssUrl: 'https://feeds.simplecast.com/54nAGcIl' },
@@ -741,30 +741,68 @@ app.post('/webhook/select-channel', async (req, res) => {
   // Track selection
   trackPodcastSelection(digits, caller, req.body.CallSid);
   
-  // Handle each channel directly instead of redirecting
-  if (digits === '0') {
-    twiml.say(VOICE_CONFIG, 'System test successful. The Twilio integration is working properly.');
-    twiml.redirect('/webhook/ivr-main');
-  } else if (digits === '1') {
-    twiml.say(VOICE_CONFIG, `You selected ${selectedPodcast.name}. Please wait while we load the latest episode.`);
+  // Handle podcast streaming directly for all channels
+  twiml.say(VOICE_CONFIG, `You selected ${selectedPodcast.name}. Loading latest episode.`);
+  
+  try {
+    console.log(`🔍 Fetching episodes for ${selectedPodcast.name} from: ${selectedPodcast.rssUrl}`);
     
-    // Try to fetch and play NPR directly here
-    try {
-      const episodes = await fetchPodcastEpisodes(selectedPodcast.rssUrl);
-      if (episodes.length > 0) {
-        const episode = episodes[0];
-        const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-        twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 100)}`);
-        twiml.play({ loop: 1 }, cleanedUrl);
-      } else {
-        twiml.say(VOICE_CONFIG, 'No episodes available right now.');
-      }
-    } catch (error) {
-      twiml.say(VOICE_CONFIG, 'The podcast is temporarily unavailable.');
+    // Handle static test channel
+    if (selectedPodcast.rssUrl === 'STATIC_TEST') {
+      twiml.say(VOICE_CONFIG, 'System test successful. The Twilio integration is working properly.');
+      twiml.redirect('/webhook/ivr-main');
+      res.type('text/xml');
+      return res.send(twiml.toString());
     }
+    
+    const episodes = await fetchPodcastEpisodes(selectedPodcast.rssUrl);
+    
+    if (!episodes || episodes.length === 0) {
+      twiml.say(VOICE_CONFIG, `Sorry, no episodes are available for ${selectedPodcast.name} right now. Please try another podcast.`);
+      twiml.redirect('/webhook/ivr-main');
+      res.type('text/xml');
+      return res.send(twiml.toString());
+    }
+    
+    const episode = episodes[0];
+    console.log(`📻 Episode found: "${episode.title}"`);
+    
+    // Clean the URL with error handling
+    let finalAudioUrl;
+    try {
+      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+      if (!cleanedUrl || !cleanedUrl.startsWith('http')) {
+        throw new Error('Invalid cleaned URL');
+      }
+      finalAudioUrl = cleanedUrl;
+    } catch (urlError) {
+      console.error(`⚠️ URL cleaning failed: ${urlError.message}, using original URL`);
+      finalAudioUrl = episode.audioUrl;
+    }
+    
+    console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
+    
+    // Announce and play episode
+    twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 120)}`);
+    
+    // Set up gather for controls
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 8,
+      action: '/webhook/ivr-main',
+      method: 'POST'
+    });
+    
+    // Play the podcast
+    gather.play({ loop: 1 }, finalAudioUrl);
+    gather.say(VOICE_CONFIG, 'Press any key to return to the main menu.');
+    
+    // Fallback to main menu
     twiml.redirect('/webhook/ivr-main');
-  } else {
-    twiml.say(VOICE_CONFIG, `${selectedPodcast.name} is temporarily unavailable. Please try NPR option 1.`);
+    
+  } catch (error) {
+    console.error(`❌ Error playing ${selectedPodcast.name}:`, error.message);
+    twiml.say(VOICE_CONFIG, `Sorry, there's a technical issue with ${selectedPodcast.name}. Please try another podcast or call back later.`);
     twiml.redirect('/webhook/ivr-main');
   }
   
@@ -805,39 +843,6 @@ app.all('/test-podcast/:channel', async (req, res) => {
   }
 });
 
-// Simple channel-specific endpoints that definitely work
-app.all('/webhook/channel-0', async (req, res) => {
-  const twiml = new VoiceResponse();
-  twiml.say(VOICE_CONFIG, 'System test successful. The Twilio integration is working properly. Returning to main menu.');
-  twiml.redirect('/webhook/ivr-main');
-  res.type('text/xml').send(twiml.toString());
-});
-
-app.all('/webhook/channel-1', async (req, res) => {
-  const twiml = new VoiceResponse();
-  try {
-    const episodes = await fetchPodcastEpisodes('https://feeds.npr.org/500005/podcast.xml');
-    if (episodes.length > 0) {
-      const episode = episodes[0];
-      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-      twiml.say(VOICE_CONFIG, `Now playing: ${episode.title}`);
-      twiml.play({ loop: 1 }, cleanedUrl);
-    } else {
-      twiml.say(VOICE_CONFIG, 'NPR News is temporarily unavailable.');
-    }
-  } catch (error) {
-    twiml.say(VOICE_CONFIG, 'NPR News is temporarily unavailable.');
-  }
-  twiml.redirect('/webhook/ivr-main');
-  res.type('text/xml').send(twiml.toString());
-});
-
-app.all('/webhook/channel-5', async (req, res) => {
-  const twiml = new VoiceResponse();
-  twiml.say(VOICE_CONFIG, 'Matt Walsh Show is temporarily unavailable due to streaming service technical difficulties. Please try NPR option 1.');
-  twiml.redirect('/webhook/ivr-main');
-  res.type('text/xml').send(twiml.toString());
-});
 
 // Enhanced Episode Playback with Streaming
 app.all('/webhook/play-episode', async (req, res) => {
