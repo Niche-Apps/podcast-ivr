@@ -46,11 +46,15 @@ async function fetchPodcastEpisodes(rssUrl) {
     
     try {
         const response = await axios.get(rssUrl, {
-            timeout: 15000,
+            timeout: 12000, // Reduced timeout for faster failures
+            maxRedirects: 5, // Limit redirects
             headers: {
                 'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
-                'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-            }
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+                'Cache-Control': 'no-cache',
+                'Connection': 'close' // Close connection after request
+            },
+            validateStatus: (status) => status >= 200 && status < 400 // Accept redirects
         });
         
         console.log(`✅ RSS fetch successful, content length: ${response.data.length}`);
@@ -62,8 +66,8 @@ async function fetchPodcastEpisodes(rssUrl) {
         const itemMatches = xmlText.match(/<item[\s\S]*?<\/item>/gi) || [];
         console.log(`📄 Found ${itemMatches.length} episodes in feed`);
         
-        // Process first 10 episodes for better performance
-        for (let i = 0; i < Math.min(itemMatches.length, 10); i++) {
+        // Process first 5 episodes for faster response
+        for (let i = 0; i < Math.min(itemMatches.length, 5); i++) {
             const item = itemMatches[i];
             
             // Extract title
@@ -747,7 +751,14 @@ app.get('/webhook/play-episode', async (req, res) => {
   
   try {
     console.log(`🔍 Fetching episodes from: ${podcast.rssUrl}`);
-    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    
+    // Add timeout wrapper for the entire operation
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Operation timeout after 20 seconds')), 20000);
+    });
+    
+    const fetchPromise = fetchPodcastEpisodes(podcast.rssUrl);
+    const episodes = await Promise.race([fetchPromise, timeoutPromise]);
     
     if (!episodes || episodes.length === 0) {
       console.log(`❌ No episodes found for ${podcast.name}`);
@@ -772,13 +783,23 @@ app.get('/webhook/play-episode', async (req, res) => {
     console.log(`📻 Episode found: "${episode.title}"`);
     console.log(`🔗 Raw audio URL: ${episode.audioUrl.substring(0, 100)}...`);
     
-    // Clean the URL
-    const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-    console.log(`🧹 Cleaned URL: ${cleanedUrl.substring(0, 100)}...`);
-    
-    // Use cleaned URL directly - no complex validation to avoid timeouts
-    const finalAudioUrl = cleanedUrl;
-    console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
+    // Clean the URL with additional safety checks
+    let finalAudioUrl;
+    try {
+      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+      console.log(`🧹 Cleaned URL: ${cleanedUrl.substring(0, 100)}...`);
+      
+      // Basic URL validation
+      if (!cleanedUrl || !cleanedUrl.startsWith('http')) {
+        throw new Error('Invalid cleaned URL');
+      }
+      
+      finalAudioUrl = cleanedUrl;
+      console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
+    } catch (urlError) {
+      console.error(`⚠️ URL cleaning failed: ${urlError.message}, using original URL`);
+      finalAudioUrl = episode.audioUrl;
+    }
     
     // Announce episode
     const positionMins = Math.floor(position / 60);
@@ -796,9 +817,16 @@ app.get('/webhook/play-episode', async (req, res) => {
       timeout: 5
     });
     
-    // Stream the podcast directly from URL
-    console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
-    gather.play({ loop: 1 }, finalAudioUrl);
+    // Stream the podcast directly from URL with fallback
+    try {
+      console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
+      gather.play({ loop: 1 }, finalAudioUrl);
+    } catch (playError) {
+      console.error(`❌ Play command failed: ${playError.message}`);
+      gather.say(VOICE_CONFIG, `Sorry, this episode is temporarily unavailable. Trying next episode.`);
+      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex + 1}&position=0`);
+      return res.type('text/xml').send(twiml.toString());
+    }
     
     twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.`);
     
@@ -810,8 +838,13 @@ app.get('/webhook/play-episode', async (req, res) => {
     console.error(`❌ Episode playback error for ${podcast.name}:`, error.message);
     console.error(`Error stack:`, error.stack);
     
-    // Try next episode automatically if this is the first episode
-    if (episodeIndex === 0) {
+    // Specific handling for timeout errors
+    if (error.message.includes('timeout')) {
+      console.log(`⏰ Timeout error - providing fallback response`);
+      twiml.say(VOICE_CONFIG, `${podcast.name} is taking longer than usual to load. Please try again in a moment or select another podcast.`);
+      twiml.redirect('/webhook/ivr-main');
+    } else if (episodeIndex === 0) {
+      // Try next episode automatically if this is the first episode
       console.log(`🔄 Trying next episode due to error...`);
       twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=1&position=0`);
     } else {
