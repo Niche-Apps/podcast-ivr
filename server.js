@@ -749,7 +749,7 @@ app.post('/webhook/select-channel', async (req, res) => {
 });
 
 // Test endpoint to check RSS feeds directly
-app.get('/test-podcast/:channel', async (req, res) => {
+app.all('/test-podcast/:channel', async (req, res) => {
   const channel = req.params.channel;
   const podcast = ALL_PODCASTS[channel];
   
@@ -782,10 +782,11 @@ app.get('/test-podcast/:channel', async (req, res) => {
 });
 
 // Enhanced Episode Playback with Streaming
-app.get('/webhook/play-episode', async (req, res) => {
-  const channel = req.query.channel;
-  const episodeIndex = parseInt(req.query.episodeIndex) || 0;
-  const position = parseInt(req.query.position) || 0;
+app.all('/webhook/play-episode', async (req, res) => {
+  // Handle parameters from both GET query and POST body
+  const channel = req.query.channel || req.body.channel;
+  const episodeIndex = parseInt(req.query.episodeIndex || req.body.episodeIndex) || 0;
+  const position = parseInt(req.query.position || req.body.position) || 0;
   
   console.log(`=== STREAMING EPISODE PLAYBACK ===`);
   console.log(`Channel: ${channel}, Episode: ${episodeIndex}, Position: ${position}s`);
