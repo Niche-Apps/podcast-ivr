@@ -173,7 +173,7 @@ function cleanAudioUrl(url) {
 
 // Podcast configuration
 const ALL_PODCASTS = {
-    '0': { name: 'System Test', rssUrl: 'https://feeds.npr.org/510298/podcast.xml' }, // NPR Podcast Directory - simple URLs
+    '0': { name: 'System Test', rssUrl: 'STATIC_TEST' }, // No RSS - just a test message
     '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' },
     '2': { name: 'This American Life', rssUrl: 'https://feeds.thisamericanlife.org/talpodcast' },
     '3': { name: 'The Daily', rssUrl: 'https://feeds.simplecast.com/54nAGcIl' },
@@ -799,6 +799,41 @@ app.get('/webhook/play-episode', async (req, res) => {
   if (!podcast) {
     console.log(`ERROR: No podcast for channel ${channel}`);
     twiml.say(VOICE_CONFIG, 'Invalid channel.');
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  // Handle static test channel
+  if (podcast.rssUrl === 'STATIC_TEST') {
+    console.log(`🧪 System test channel - providing static response`);
+    twiml.say(VOICE_CONFIG, `System test successful. The Twilio integration is working properly. This is a pre-recorded message to verify the phone system is operational. You can now try NPR option 1 for live podcast streaming.`);
+    
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 5,
+      action: '/webhook/ivr-main',
+      method: 'POST'
+    });
+    gather.say(VOICE_CONFIG, 'Press any key to return to the main menu.');
+    
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+
+  // For problematic channels, skip RSS fetching and provide immediate response
+  const problematicChannels = ['3', '5', '6', '7', '8', '20']; // Simplecast feeds
+  if (problematicChannels.includes(channel)) {
+    console.log(`🚫 Skipping RSS fetch for problematic channel ${channel}`);
+    twiml.say(VOICE_CONFIG, `${podcast.name} podcast is temporarily unavailable. The streaming service is having technical difficulties. Please try NPR option 1, or call back later.`);
+    
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 5,
+      action: '/webhook/ivr-main',
+      method: 'POST'
+    });
+    gather.say(VOICE_CONFIG, 'Press any key to return to the main menu.');
+    
     twiml.redirect('/webhook/ivr-main');
     return res.type('text/xml').send(twiml.toString());
   }
