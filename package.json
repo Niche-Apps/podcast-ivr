@@ -6,7 +6,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@ringcentral/sdk": "^5.0.4",
+    "twilio": "^4.19.0",
     "@google-cloud/text-to-speech": "^5.0.0",
     "axios": "^1.6.0",
     "child_process": "^1.0.2",

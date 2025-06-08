@@ -1,8 +1,7 @@
 require('dotenv').config();
 const express = require('express');
-const SDK = require('@ringcentral/sdk').SDK;
+const twilio = require('twilio');
 const { PodcastAudioPipeline } = require('./podcast-audio-pipeline');
-const { RingCentralAutomation } = require('./webhook-setup');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,15 +12,31 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Initialize RingCentral SDK
-const rc = new SDK({
-  server: process.env.RC_SERVER_URL,
-  clientId: process.env.RC_CLIENT_ID,
-  clientSecret: process.env.RC_CLIENT_SECRET
-});
+// Initialize Twilio client
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // Initialize Audio Pipeline
 let audioPipeline;
+
+// Podcast configuration
+const ALL_PODCASTS = {
+    '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' },
+    '2': { name: 'This American Life', rssUrl: 'https://feeds.thisamericanlife.org/talpodcast' },
+    '3': { name: 'The Daily', rssUrl: 'https://feeds.simplecast.com/54nAGcIl' },
+    '4': { name: 'Serial', rssUrl: 'https://feeds.serialpodcast.org/serial' },
+    '5': { name: 'Matt Walsh Show', rssUrl: 'https://feeds.simplecast.com/pp_b9xO6' },
+    '6': { name: 'Ben Shapiro Show', rssUrl: 'https://feeds.simplecast.com/C0fPpQ64' },
+    '7': { name: 'Michael Knowles Show', rssUrl: 'https://feeds.simplecast.com/6c2VScgo' },
+    '8': { name: 'Andrew Klavan Show', rssUrl: 'https://feeds.simplecast.com/2Dy_5daq' },
+    '9': { name: 'Pints with Aquinas', rssUrl: 'https://feeds.acast.com/public/shows/683607331b846c88bdfb0f70' },
+    '10': { name: 'Joe Rogan', rssUrl: 'https://feeds.megaphone.fm/GLT1412515089' },
+    '11': { name: 'TimCast IRL', rssUrl: 'https://feeds.libsyn.com/574450/rss' },
+    '12': { name: 'Louder with Crowder', rssUrl: 'https://media.rss.com/louder-with-crowder/feed.xml' },
+    '13': { name: 'Lex Fridman', rssUrl: 'https://lexfridman.com/feed/podcast/' },
+    '14': { name: 'Matt Walsh 2', rssUrl: 'https://www.spreaker.com/show/6636540/episodes/feed' },
+    '20': { name: 'Morning Wire', rssUrl: 'https://feeds.simplecast.com/WCb5SgYj' }
+};
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -441,50 +456,21 @@ app.post('/api/tts/generate', async (req, res) => {
   }
 });
 
-// Auto-configure RingCentral
-app.post('/api/configure/ringcentral', async (req, res) => {
+// Get system status
+app.get('/api/status', async (req, res) => {
   try {
-    console.log('🔧 Auto-configuring RingCentral...');
-    
-    const automation = new RingCentralAutomation();
-    const success = await automation.fullSetup();
-    
-    if (success) {
-      res.json({
-        success: true,
-        message: 'RingCentral configured successfully',
-        phone: '(904) 371-2672',
-        configured: new Date().toISOString()
-      });
-    } else {
-      res.status(500).json({
-        error: 'RingCentral configuration failed',
-        success: false
-      });
-    }
-    
-  } catch (error) {
-    console.error('❌ RingCentral configuration failed:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get RingCentral status
-app.get('/api/status/ringcentral', async (req, res) => {
-  try {
-    const automation = new RingCentralAutomation();
-    await automation.initialize();
-    const status = await automation.getSystemStatus();
-    
     res.json({
-      ...status,
+      service: 'Twilio Podcast IVR',
+      status: 'operational',
+      platform: 'Railway',
       ttsVoice: process.env.TTS_VOICE_NAME || 'en-GB-Neural2-B',
       ttsProvider: 'Google Cloud TTS',
-      baseUrl: process.env.BASE_URL
+      baseUrl: process.env.BASE_URL || process.env.RAILWAY_URL,
+      podcasts: Object.keys(ALL_PODCASTS).length,
+      timestamp: new Date().toISOString()
     });
-    
   } catch (error) {
-    res.status(500).json({ error: error.message, configured: false });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -510,27 +496,27 @@ app.get('/api/voices/british', async (req, res) => {
 // Initialize everything
 async function startServer() {
   try {
-    // Initialize RingCentral
-    await rc.login({ jwt: process.env.RC_JWT_TOKEN });
-    console.log('✅ Connected to RingCentral');
+    console.log('🚀 Starting Twilio Podcast IVR Server...');
     
     // Initialize Audio Pipeline
-    audioPipeline = new PodcastAudioPipeline();
-    await audioPipeline.initialize();
-    
-    // Initial podcast update
-    console.log('🔄 Running initial podcast update...');
-    await audioPipeline.updateAllPodcasts();
-    
-    // Set up scheduled updates
-    audioPipeline.setupScheduledUpdates();
+    if (PodcastAudioPipeline) {
+      audioPipeline = new PodcastAudioPipeline();
+      await audioPipeline.initialize();
+      
+      // Initial podcast update
+      console.log('🔄 Running initial podcast update...');
+      await audioPipeline.updateAllPodcasts();
+      
+      // Set up scheduled updates
+      audioPipeline.setupScheduledUpdates();
+    }
     
     // Start Express server
     app.listen(port, () => {
-      console.log('\n🎉 PODCAST IVR SYSTEM FULLY OPERATIONAL!');
+      console.log('\n🎉 TWILIO PODCAST IVR SYSTEM OPERATIONAL!');
       console.log(`🌐 Server running on port ${port}`);
-      console.log('📞 Phone system: (904) 371-2672');
-      console.log('🎧 Audio pipeline: ACTIVE (Google British TTS)');
+      console.log('📞 Twilio Integration: READY');
+      console.log('🎧 Audio pipeline: ACTIVE');
       console.log('💰 Ad tracking: ENABLED');
       console.log('\n📊 Available endpoints:');
       console.log(`   GET  /                        - System status`);
@@ -538,15 +524,10 @@ async function startServer() {
       console.log(`   POST /update-podcast/:id      - Manual update`);
       console.log(`   POST /update-all-podcasts     - Update all`);
       console.log(`   GET  /analytics               - Revenue analytics`);
-      console.log(`   POST /webhook                 - RingCentral events`);
-      console.log('\n🚀 NEW AUTOMATION ENDPOINTS:');
-      console.log(`   POST /api/episodes/add        - Add new episode with TTS`);
-      console.log(`   POST /api/tts/generate        - Generate custom TTS audio`);
-      console.log(`   POST /api/configure/ringcentral - Auto-configure RingCentral`);
-      console.log(`   GET  /api/status/ringcentral  - Get system status`);
-      console.log(`   GET  /api/voices/british      - List British male voices`);
-      console.log('\n🇬🇧 Google British Male Voice ready for all TTS!');
-      console.log('🚀 System ready for calls!');
+      console.log(`   POST /webhook/ivr-main        - Main IVR menu`);
+      console.log(`   POST /webhook/ivr-response    - IVR responses`);
+      console.log(`   GET  /audio/:filename         - Serve audio files`);
+      console.log('\n🚀 Railway deployment ready for Twilio webhooks!');
     });
     
   } catch (error) {
@@ -563,121 +544,169 @@ module.exports = app;
 // CLEAN XML IVR Handlers - No syntax errors
 // Add these to your server.js
 
-// Main IVR Menu - Clean XML
+// Main IVR Menu
 app.all('/webhook/ivr-main', (req, res) => {
   console.log('📞 Serving main IVR menu');
   
-  res.set('Content-Type', 'application/xml');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather numDigits="1" timeout="10" action="https://${req.get('host')}/webhook/ivr-response" method="POST">
-    <Say voice="alice" language="en-US">Welcome to the Podcast Hotline! Your source for on-demand audio content. Press 1 for today's Daily Tech News, featuring the latest technology updates and industry insights. Press 2 for Weather and Traffic, your local conditions and travel updates. Press 3 for Daily Stories, featuring engaging narratives and premium content. Press 9 to repeat this menu. Press 0 to speak with a representative. Please make your selection now.</Say>
-  </Gather>
-  <Say voice="alice" language="en-US">We didn't receive your selection. Please call back and try again.</Say>
-  <Hangup />
-</Response>`);
+  const twiml = new VoiceResponse();
+  const gather = twiml.gather({
+    numDigits: 1,
+    timeout: 10,
+    action: '/webhook/ivr-response',
+    method: 'POST'
+  });
+  
+  gather.say({
+    voice: 'alice',
+    language: 'en-US'
+  }, 'Welcome to the Podcast Hotline! Press 1 for NPR News Now, 2 for This American Life, 3 for The Daily, 4 for Serial, 5 for Matt Walsh Show, 6 for Ben Shapiro Show, 7 for Michael Knowles Show, 8 for Andrew Klavan Show, 9 for Pints with Aquinas, or 0 for Joe Rogan. For more options, press star. Please make your selection now.');
+  
+  twiml.say({
+    voice: 'alice',
+    language: 'en-US'
+  }, 'We didn\'t receive your selection. Please call back and try again.');
+  
+  twiml.hangup();
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
 });
 
-// Handle IVR digit responses - Clean XML
+// Handle IVR digit responses
 app.post('/webhook/ivr-response', (req, res) => {
   const digit = req.body.Digits;
   const caller = req.body.From || req.body.Caller;
   
   console.log(`🔢 IVR Selection: ${digit} from ${caller}`);
   
-  res.set('Content-Type', 'application/xml');
+  const twiml = new VoiceResponse();
   
-  switch (digit) {
-    case '1':
-      // Track selection immediately
-      trackPodcastSelection('1', caller, req.body.CallSid);
-      
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice" language="en-US">You selected Daily Tech News. This episode is brought to you by TechCorp Solutions, your partner in digital transformation.</Say>
-  <Play>https://${req.get('host')}/audio/tech-news-latest.mp3</Play>
-  <Say voice="alice" language="en-US">Thank you for listening to Daily Tech News. Press 1 to return to the main menu, or hang up to end your call.</Say>
-  <Gather numDigits="1" timeout="5" action="https://${req.get('host')}/webhook/post-podcast" method="POST">
-    <Say voice="alice" language="en-US">Press 1 for main menu.</Say>
-  </Gather>
-  <Hangup />
-</Response>`);
-      break;
-      
-    case '2':
-      trackPodcastSelection('2', caller, req.body.CallSid);
-      
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice" language="en-US">You selected Weather and Traffic. This weather update is sponsored by Dallas Auto Group, serving all your automotive needs.</Say>
-  <Play>https://${req.get('host')}/audio/weather-latest.mp3</Play>
-  <Say voice="alice" language="en-US">That's your weather and traffic update. Stay safe out there! Press 1 to return to the main menu, or hang up to end your call.</Say>
-  <Gather numDigits="1" timeout="5" action="https://${req.get('host')}/webhook/post-podcast" method="POST">
-    <Say voice="alice" language="en-US">Press 1 for main menu.</Say>
-  </Gather>
-  <Hangup />
-</Response>`);
-      break;
-      
-    case '3':
-      trackPodcastSelection('3', caller, req.body.CallSid);
-      
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice" language="en-US">You selected Daily Stories. Today's story is presented by StoryBrand Publishing, where every story matters.</Say>
-  <Play>https://${req.get('host')}/audio/story-latest.mp3</Play>
-  <Say voice="alice" language="en-US">Thank you for listening to Daily Stories. We hope you enjoyed today's tale. Press 1 to explore more podcasts, or hang up when you're ready.</Say>
-  <Gather numDigits="1" timeout="5" action="https://${req.get('host')}/webhook/post-podcast" method="POST">
-    <Say voice="alice" language="en-US">Press 1 for main menu.</Say>
-  </Gather>
-  <Hangup />
-</Response>`);
-      break;
-      
-    case '9':
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect>https://${req.get('host')}/webhook/ivr-main</Redirect>
-</Response>`);
-      break;
-      
-    case '0':
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice" language="en-US">Please hold while we connect you to a representative.</Say>
-  <Dial timeout="30" action="https://${req.get('host')}/webhook/transfer-failed">
-    <Number>${process.env.MAIN_PHONE_NUMBER || '+19043712672'}</Number>
-  </Dial>
-</Response>`);
-      break;
-      
-    default:
-      res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice" language="en-US">Sorry, that's not a valid selection.</Say>
-  <Redirect>https://${req.get('host')}/webhook/ivr-main</Redirect>
-</Response>`);
+  // Get podcast info
+  const podcast = ALL_PODCASTS[digit];
+  
+  if (podcast) {
+    // Track selection
+    trackPodcastSelection(digit, caller, req.body.CallSid);
+    
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, `You selected ${podcast.name}. Please wait while we fetch the latest episode.`);
+    
+    // Play latest podcast audio (you'll need to implement podcast fetching)
+    twiml.play(`https://${req.get('host')}/audio/podcast-${digit}-latest.mp3`);
+    
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 5,
+      action: '/webhook/post-podcast',
+      method: 'POST'
+    });
+    
+    gather.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Press 1 to return to the main menu.');
+    
+    twiml.hangup();
+  } else if (digit === '*') {
+    // More options menu
+    const gather = twiml.gather({
+      numDigits: 2,
+      timeout: 10,
+      action: '/webhook/ivr-response-extended',
+      method: 'POST'
+    });
+    
+    gather.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Press 10 for TimCast IRL, 11 for Louder with Crowder, 12 for Lex Fridman, 13 for Matt Walsh 2, or 20 for Morning Wire. Please enter your two digit selection now.');
+    
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'We didn\'t receive your selection.');
+    
+    twiml.redirect('/webhook/ivr-main');
+  } else {
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Sorry, that\'s not a valid selection.');
+    
+    twiml.redirect('/webhook/ivr-main');
   }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Handle extended menu responses (two-digit)
+app.post('/webhook/ivr-response-extended', (req, res) => {
+  const digits = req.body.Digits;
+  const caller = req.body.From || req.body.Caller;
+  
+  console.log(`🔢 Extended IVR Selection: ${digits} from ${caller}`);
+  
+  const twiml = new VoiceResponse();
+  const podcast = ALL_PODCASTS[digits];
+  
+  if (podcast) {
+    trackPodcastSelection(digits, caller, req.body.CallSid);
+    
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, `You selected ${podcast.name}. Please wait while we fetch the latest episode.`);
+    
+    twiml.play(`https://${req.get('host')}/audio/podcast-${digits}-latest.mp3`);
+    
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 5,
+      action: '/webhook/post-podcast',
+      method: 'POST'
+    });
+    
+    gather.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Press 1 to return to the main menu.');
+    
+    twiml.hangup();
+  } else {
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Sorry, that\'s not a valid selection.');
+    
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
 });
 
 // Handle post-podcast menu
 app.post('/webhook/post-podcast', (req, res) => {
   const digit = req.body.Digits;
   
-  res.set('Content-Type', 'application/xml');
+  const twiml = new VoiceResponse();
   
   if (digit === '1') {
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect>https://${req.get('host')}/webhook/ivr-main</Redirect>
-</Response>`);
+    twiml.redirect('/webhook/ivr-main');
   } else {
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice" language="en-US">Thank you for calling the Podcast Hotline. Goodbye!</Say>
-  <Hangup />
-</Response>`);
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Thank you for calling the Podcast Hotline. Goodbye!');
+    
+    twiml.hangup();
   }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
 });
 
 // Handle transfer failures
