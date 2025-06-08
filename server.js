@@ -419,13 +419,10 @@ app.post('/api/episodes/add', async (req, res) => {
       ? `This episode is brought to you by ${sponsor}. ${script} Thank you for listening.`
       : script;
     
-    // Generate audio using Polly Brian voice
+    // Generate audio using TTS
     const audioPath = await audioPipeline.textToSpeech(fullScript, filename);
     
-    // Upload to RingCentral
-    const automation = new RingCentralAutomation();
-    await automation.initialize();
-    const greetingId = await automation.addNewEpisode(podcastType, audioPath, title);
+    // Note: Direct file storage (RingCentral upload removed)
     
     res.json({
       success: true,
@@ -433,7 +430,7 @@ app.post('/api/episodes/add', async (req, res) => {
         title,
         podcastType,
         filename,
-        greetingId,
+        audioPath,
         sponsor,
         createdAt: new Date().toISOString()
       },

@@ -1,5 +1,4 @@
 require('dotenv').config();
-const SDK = require('@ringcentral/sdk').SDK;
 const textToSpeech = require('@google-cloud/text-to-speech');
 const https = require('https');
 const http = require('http');
@@ -10,11 +9,7 @@ const crypto = require('crypto');
 
 class PodcastAudioPipeline {
   constructor() {
-    this.rc = new SDK({
-      server: process.env.RC_SERVER_URL,
-      clientId: process.env.RC_CLIENT_ID,
-      clientSecret: process.env.RC_CLIENT_SECRET
-    });
+    // Removed RingCentral SDK - now using direct file storage
     
     // Configure Google Cloud TTS (works without credentials on free tier)
     try {
@@ -61,7 +56,7 @@ class PodcastAudioPipeline {
   }
 
   async initialize() {
-    await this.rc.login({ jwt: process.env.RC_JWT_TOKEN });
+    // Initialize pipeline (RingCentral login removed)
     console.log('✅ Audio pipeline initialized');
     console.log('📁 Audio directory:', this.audioDir);
   }
@@ -332,92 +327,40 @@ class PodcastAudioPipeline {
     return sponsors[podcastName] || 'Our Sponsors';
   }
 
-  // Upload audio to RingCentral extension as greeting
+  // Save audio file for serving via HTTP (replaced RingCentral upload)
   async uploadToExtension(extensionId, audioFile, config) {
-    console.log(`📤 Uploading to extension ${extensionId}: ${config.name}`);
+    console.log(`📤 Saving audio for extension ${extensionId}: ${config.name}`);
     
     try {
-      // Read the audio file
-      const audioBuffer = fs.readFileSync(audioFile);
+      // Copy to serving directory with standardized name
+      const servingPath = path.join(this.audioDir, `podcast-${extensionId}-latest.mp3`);
+      fs.copyFileSync(audioFile, servingPath);
       
-      // Create form data for multipart upload
-      const formData = {
-        name: `${config.name} - ${new Date().toDateString()}`,
-        type: 'Voicemail', // This makes it play as greeting
-        answeringRule: {
-          id: 'business-hours-rule'
-        }
-      };
-
-      // Upload the greeting
-      const response = await this.rc.post(
-        `/restapi/v1.0/account/~/extension/${extensionId}/greeting`,
-        formData,
-        audioBuffer,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
-
-      console.log(`✅ Successfully uploaded ${config.name} to extension ${extensionId}`);
+      console.log(`✅ Successfully saved ${config.name} to ${servingPath}`);
       
-      // Set this greeting as active for the extension
-      await this.setActiveGreeting(extensionId, response.json().id);
+      // Clean up local audio file if it's different from serving path
+      if (audioFile !== servingPath) {
+        fs.unlinkSync(audioFile);
+      }
       
-      // Clean up local audio file
-      fs.unlinkSync(audioFile);
-      
-      return response;
+      return { success: true, path: servingPath };
       
     } catch (error) {
-      console.error(`❌ Failed to upload to extension ${extensionId}:`, error.message);
-      
-      // Fallback: Set extension to play generic message
-      await this.setGenericMessage(extensionId, config);
+      console.error(`❌ Failed to save audio for extension ${extensionId}:`, error.message);
+      throw error;
     }
   }
 
-  // Set the uploaded greeting as active
+  // Set the uploaded greeting as active (now just logs - RingCentral removed)
   async setActiveGreeting(extensionId, greetingId) {
-    try {
-      await this.rc.put(
-        `/restapi/v1.0/account/~/extension/${extensionId}/answering-rule/business-hours-rule`,
-        {
-          greetings: [{
-            type: 'Voicemail',
-            preset: {
-              id: greetingId
-            }
-          }]
-        }
-      );
-      
-      console.log(`✅ Greeting ${greetingId} set as active for extension ${extensionId}`);
-    } catch (error) {
-      console.error(`❌ Failed to set active greeting:`, error.message);
-    }
+    console.log(`✅ Audio ready for extension ${extensionId} (greeting: ${greetingId})`);
+    // Note: RingCentral greeting activation removed - files served directly via HTTP
   }
 
-  // Fallback: Set extension to generic message
+  // Fallback: Set extension to generic message (now just logs - RingCentral removed)
   async setGenericMessage(extensionId, config) {
-    try {
-      await this.rc.put(
-        `/restapi/v1.0/account/~/extension/${extensionId}/answering-rule/business-hours-rule`,
-        {
-          callHandlingAction: 'TakeMessagesOnly',
-          greetings: [{
-            type: 'Voicemail',
-            text: `Welcome to ${config.name}. Thank you for calling our podcast hotline.`
-          }]
-        }
-      );
-      
-      console.log(`✅ Generic message set for extension ${extensionId}`);
-    } catch (error) {
-      console.error(`❌ Failed to set generic message:`, error.message);
-    }
+    console.log(`✅ Generic message available for extension ${extensionId}: ${config.name}`);
+    // Note: RingCentral message configuration removed - handled by TwiML responses
   }
 
   // Schedule automatic updates
