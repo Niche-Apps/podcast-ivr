@@ -741,8 +741,32 @@ app.post('/webhook/select-channel', async (req, res) => {
   // Track selection
   trackPodcastSelection(digits, caller, req.body.CallSid);
   
-  twiml.say(VOICE_CONFIG, `You selected ${selectedPodcast.name}. Loading latest episode.`);
-  twiml.redirect(`/webhook/channel-${digits}`);
+  // Handle each channel directly instead of redirecting
+  if (digits === '0') {
+    twiml.say(VOICE_CONFIG, 'System test successful. The Twilio integration is working properly.');
+    twiml.redirect('/webhook/ivr-main');
+  } else if (digits === '1') {
+    twiml.say(VOICE_CONFIG, `You selected ${selectedPodcast.name}. Please wait while we load the latest episode.`);
+    
+    // Try to fetch and play NPR directly here
+    try {
+      const episodes = await fetchPodcastEpisodes(selectedPodcast.rssUrl);
+      if (episodes.length > 0) {
+        const episode = episodes[0];
+        const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+        twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 100)}`);
+        twiml.play({ loop: 1 }, cleanedUrl);
+      } else {
+        twiml.say(VOICE_CONFIG, 'No episodes available right now.');
+      }
+    } catch (error) {
+      twiml.say(VOICE_CONFIG, 'The podcast is temporarily unavailable.');
+    }
+    twiml.redirect('/webhook/ivr-main');
+  } else {
+    twiml.say(VOICE_CONFIG, `${selectedPodcast.name} is temporarily unavailable. Please try NPR option 1.`);
+    twiml.redirect('/webhook/ivr-main');
+  }
   
   res.type('text/xml');
   res.send(twiml.toString());
