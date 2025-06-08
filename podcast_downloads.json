@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2025-06-08T20:16:54.629Z",
+    "callerLocation": "Unknown",
+    "podcastChannel": "1",
+    "podcastName": "Daily Tech News",
+    "sponsor": "TechCorp",
+    "adRevenue": 0.5,
+    "source": "xml_ivr"
+  }
+]
