@@ -12,8 +12,19 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Initialize Twilio client
-const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+// Initialize Twilio client (only if credentials are provided)
+let twilioClient;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  try {
+    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    console.log('✅ Twilio client initialized');
+  } catch (error) {
+    console.warn('⚠️ Twilio client initialization failed:', error.message);
+  }
+} else {
+  console.warn('⚠️ Twilio credentials not provided - running in demo mode');
+}
+
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // Initialize Audio Pipeline
@@ -40,16 +51,26 @@ const ALL_PODCASTS = {
 
 // Health check endpoint
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'Podcast IVR Server Running',
+  res.status(200).json({ 
+    status: 'Twilio Podcast IVR Server Running',
+    service: 'operational',
     timestamp: new Date().toISOString(),
+    platform: 'Railway',
+    twilioEnabled: !!twilioClient,
+    podcasts: Object.keys(ALL_PODCASTS).length,
     features: [
+      'Twilio integration',
       'Call tracking & ad revenue',
       'Audio content pipeline', 
       'Automated podcast updates',
       'Real-time analytics'
     ]
   });
+});
+
+// Simple health check for Railway
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
 });
 
 // Audio pipeline status endpoint
@@ -498,17 +519,25 @@ async function startServer() {
   try {
     console.log('🚀 Starting Twilio Podcast IVR Server...');
     
-    // Initialize Audio Pipeline
-    if (PodcastAudioPipeline) {
-      audioPipeline = new PodcastAudioPipeline();
-      await audioPipeline.initialize();
-      
-      // Initial podcast update
-      console.log('🔄 Running initial podcast update...');
-      await audioPipeline.updateAllPodcasts();
-      
-      // Set up scheduled updates
-      audioPipeline.setupScheduledUpdates();
+    // Initialize Audio Pipeline (optional)
+    try {
+      if (PodcastAudioPipeline) {
+        audioPipeline = new PodcastAudioPipeline();
+        await audioPipeline.initialize();
+        
+        // Initial podcast update
+        console.log('🔄 Running initial podcast update...');
+        await audioPipeline.updateAllPodcasts();
+        
+        // Set up scheduled updates
+        audioPipeline.setupScheduledUpdates();
+        console.log('✅ Audio pipeline initialized');
+      } else {
+        console.warn('⚠️ Audio pipeline not available - skipping');
+      }
+    } catch (error) {
+      console.warn('⚠️ Audio pipeline initialization failed:', error.message);
+      console.log('📞 Continuing without audio pipeline...');
     }
     
     // Start Express server
