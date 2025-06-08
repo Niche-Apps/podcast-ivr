@@ -173,6 +173,7 @@ function cleanAudioUrl(url) {
 
 // Podcast configuration
 const ALL_PODCASTS = {
+    '0': { name: 'System Test', rssUrl: 'https://feeds.npr.org/510298/podcast.xml' }, // NPR Podcast Directory - simple URLs
     '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' },
     '2': { name: 'This American Life', rssUrl: 'https://feeds.thisamericanlife.org/talpodcast' },
     '3': { name: 'The Daily', rssUrl: 'https://feeds.simplecast.com/54nAGcIl' },
@@ -706,7 +707,7 @@ app.all('/webhook/ivr-main', (req, res) => {
     method: 'POST'
   });
   
-  const menuText = 'Podcast Hotline. Press 1 for NPR, 2 for This American Life, 3 for The Daily, 4 for Serial, 5 for Matt Walsh, 6 for Ben Shapiro, 7 for Michael Knowles, 8 for Andrew Klavan, 9 for Pints with Aquinas, 10 for Joe Rogan, 11 for Tim Pool, 12 for Crowder, 13 for Lex Fridman, 20 for Morning Wire, or 0 to repeat.';
+  const menuText = 'Podcast Hotline. Press 0 for system test, 1 for NPR, 2 for This American Life, 3 for The Daily, 4 for Serial, 5 for Matt Walsh, 6 for Ben Shapiro, 7 for Michael Knowles, 8 for Andrew Klavan, 9 for Pints with Aquinas, 10 for Joe Rogan, 11 for Tim Pool, 12 for Crowder, 13 for Lex Fridman, 20 for Morning Wire, or star to repeat.';
   
   gather.say(VOICE_CONFIG, menuText);
   
@@ -726,7 +727,7 @@ app.post('/webhook/select-channel', async (req, res) => {
   
   const twiml = new VoiceResponse();
   
-  if (digits === '0' || digits === '00') {
+  if (digits === '*' || digits === '**') {
     twiml.redirect('/webhook/ivr-main');
     return res.type('text/xml').send(twiml.toString());
   }
@@ -748,6 +749,39 @@ app.post('/webhook/select-channel', async (req, res) => {
   
   res.type('text/xml');
   res.send(twiml.toString());
+});
+
+// Test endpoint to check RSS feeds directly
+app.get('/test-podcast/:channel', async (req, res) => {
+  const channel = req.params.channel;
+  const podcast = ALL_PODCASTS[channel];
+  
+  if (!podcast) {
+    return res.json({ error: 'Invalid channel' });
+  }
+  
+  try {
+    console.log(`Testing podcast: ${podcast.name}`);
+    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    
+    if (episodes.length === 0) {
+      return res.json({ error: 'No episodes found' });
+    }
+    
+    const episode = episodes[0];
+    const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+    
+    res.json({
+      podcast: podcast.name,
+      episodeTitle: episode.title,
+      originalUrl: episode.audioUrl,
+      cleanedUrl: cleanedUrl,
+      urlChanged: cleanedUrl !== episode.audioUrl
+    });
+    
+  } catch (error) {
+    res.json({ error: error.message });
+  }
 });
 
 // Enhanced Episode Playback with Streaming
@@ -837,23 +871,16 @@ app.get('/webhook/play-episode', async (req, res) => {
       timeout: 5
     });
     
-    // Stream the podcast directly from URL with fallback
-    try {
+    // Use a simplified approach - if URL is too complex, fall back to summary
+    if (finalAudioUrl.length > 200 || finalAudioUrl.split('/').length > 8) {
+      console.log(`⚠️ Complex URL detected, using summary fallback`);
+      gather.say(VOICE_CONFIG, `This is ${podcast.name}. Latest episode: ${episode.title.substring(0, 100)}. Unfortunately, the full audio is not available right now. Please try another podcast or call back later.`);
+      twiml.say(VOICE_CONFIG, `Returning to main menu.`);
+      twiml.redirect('/webhook/ivr-main');
+    } else {
+      // Stream the podcast directly from URL
       console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
-      
-      // For Simplecast injector URLs, add special handling
-      if (finalAudioUrl.includes('injector.simplecastaudio.com')) {
-        console.log(`🎯 Simplecast injector detected - using direct play`);
-        // Twilio should handle the redirect automatically
-        gather.play({ loop: 1 }, finalAudioUrl);
-      } else {
-        gather.play({ loop: 1 }, finalAudioUrl);
-      }
-    } catch (playError) {
-      console.error(`❌ Play command failed: ${playError.message}`);
-      gather.say(VOICE_CONFIG, `Sorry, this episode is temporarily unavailable. Trying next episode.`);
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex + 1}&position=0`);
-      return res.type('text/xml').send(twiml.toString());
+      gather.play({ loop: 1 }, finalAudioUrl);
     }
     
     twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.`);
