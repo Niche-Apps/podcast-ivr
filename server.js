@@ -122,26 +122,46 @@ function cleanAudioUrl(url) {
     try {
         let cleaned = url;
         
-        // Remove common tracking redirects
+        // Remove common tracking redirects - more comprehensive patterns
         const trackingPatterns = [
+            /^https?:\/\/[^\/]*claritaspod\.com\/measure\//i,
+            /^https?:\/\/[^\/]*arttrk\.com\/p\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*verifi\.podscribe\.com\/rss\/p\//i,
+            /^https?:\/\/[^\/]*podscribe\.com\/rss\/p\//i,
+            /^https?:\/\/[^\/]*pfx\.vpixl\.com\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*prfx\.byspotify\.com\/e\//i,
+            /^https?:\/\/[^\/]*dts\.podtrac\.com\/redirect\.(mp3|aac)\//i,
+            /^https?:\/\/[^\/]*mgln\.ai\/e\/[^\/]+\//i,
             /^https?:\/\/[^\/]*podtrac\.com\/[^\/]+\//i,
             /^https?:\/\/[^\/]*chartable\.com\/[^\/]+\//i,
             /^https?:\/\/[^\/]*pdst\.fm\/e\//i,
-            /^https?:\/\/[^\/]*chtbl\.com\/track\/[^\/]+\//i
+            /^https?:\/\/[^\/]*chtbl\.com\/track\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*chrt\.fm\/track\/[^\/]+\//i
         ];
         
-        for (const pattern of trackingPatterns) {
-            if (pattern.test(cleaned)) {
-                let newUrl = cleaned.replace(pattern, '');
-                if (!newUrl.startsWith('http') && newUrl.includes('.')) {
-                    newUrl = 'https://' + newUrl;
-                }
-                if (newUrl !== cleaned) {
-                    console.log(`🗑️ Removed tracking: ${newUrl.substring(0, 80)}...`);
-                    cleaned = newUrl;
+        // Iteratively remove tracking layers
+        let previousUrl;
+        let maxIterations = 10;
+        let iteration = 0;
+        
+        do {
+            previousUrl = cleaned;
+            iteration++;
+            
+            for (const pattern of trackingPatterns) {
+                if (pattern.test(cleaned)) {
+                    let newUrl = cleaned.replace(pattern, '');
+                    if (!newUrl.startsWith('http') && newUrl.includes('.')) {
+                        newUrl = 'https://' + newUrl;
+                    }
+                    if (newUrl !== cleaned && newUrl.length > 10) {
+                        console.log(`🗑️ Iteration ${iteration}: Removed tracking layer`);
+                        cleaned = newUrl;
+                        break; // Process one layer at a time
+                    }
                 }
             }
-        }
+        } while (cleaned !== previousUrl && iteration < maxIterations);
         
         return cleaned;
         
@@ -820,7 +840,15 @@ app.get('/webhook/play-episode', async (req, res) => {
     // Stream the podcast directly from URL with fallback
     try {
       console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
-      gather.play({ loop: 1 }, finalAudioUrl);
+      
+      // For Simplecast injector URLs, add special handling
+      if (finalAudioUrl.includes('injector.simplecastaudio.com')) {
+        console.log(`🎯 Simplecast injector detected - using direct play`);
+        // Twilio should handle the redirect automatically
+        gather.play({ loop: 1 }, finalAudioUrl);
+      } else {
+        gather.play({ loop: 1 }, finalAudioUrl);
+      }
     } catch (playError) {
       console.error(`❌ Play command failed: ${playError.message}`);
       gather.say(VOICE_CONFIG, `Sorry, this episode is temporarily unavailable. Trying next episode.`);
