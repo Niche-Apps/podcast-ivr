@@ -46,15 +46,12 @@ async function fetchPodcastEpisodes(rssUrl) {
     
     try {
         const response = await axios.get(rssUrl, {
-            timeout: 12000, // Reduced timeout for faster failures
-            maxRedirects: 5, // Limit redirects
+            timeout: 5000, // Much shorter timeout
+            maxRedirects: 3, // Fewer redirects
             headers: {
                 'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
-                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-                'Cache-Control': 'no-cache',
-                'Connection': 'close' // Close connection after request
-            },
-            validateStatus: (status) => status >= 200 && status < 400 // Accept redirects
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+            }
         });
         
         console.log(`✅ RSS fetch successful, content length: ${response.data.length}`);
@@ -819,35 +816,10 @@ app.get('/webhook/play-episode', async (req, res) => {
     twiml.redirect('/webhook/ivr-main');
     return res.type('text/xml').send(twiml.toString());
   }
-
-  // For problematic channels, skip RSS fetching and provide immediate response
-  const problematicChannels = ['3', '5', '6', '7', '8', '20']; // Simplecast feeds
-  if (problematicChannels.includes(channel)) {
-    console.log(`🚫 Skipping RSS fetch for problematic channel ${channel}`);
-    twiml.say(VOICE_CONFIG, `${podcast.name} podcast is temporarily unavailable. The streaming service is having technical difficulties. Please try NPR option 1, or call back later.`);
-    
-    const gather = twiml.gather({
-      numDigits: 1,
-      timeout: 5,
-      action: '/webhook/ivr-main',
-      method: 'POST'
-    });
-    gather.say(VOICE_CONFIG, 'Press any key to return to the main menu.');
-    
-    twiml.redirect('/webhook/ivr-main');
-    return res.type('text/xml').send(twiml.toString());
-  }
   
   try {
     console.log(`🔍 Fetching episodes from: ${podcast.rssUrl}`);
-    
-    // Add timeout wrapper for the entire operation
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Operation timeout after 20 seconds')), 20000);
-    });
-    
-    const fetchPromise = fetchPodcastEpisodes(podcast.rssUrl);
-    const episodes = await Promise.race([fetchPromise, timeoutPromise]);
+    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
     
     if (!episodes || episodes.length === 0) {
       console.log(`❌ No episodes found for ${podcast.name}`);
@@ -906,20 +878,9 @@ app.get('/webhook/play-episode', async (req, res) => {
       timeout: 5
     });
     
-    // Check if this is a problematic URL type
-    const isSimplecastInjector = finalAudioUrl.includes('injector.simplecastaudio.com');
-    const isComplexUrl = finalAudioUrl.length > 200 || finalAudioUrl.split('/').length > 8;
-    
-    if (isSimplecastInjector || isComplexUrl) {
-      console.log(`⚠️ Problematic URL detected (${isSimplecastInjector ? 'Simplecast injector' : 'Complex URL'}), using summary fallback`);
-      gather.say(VOICE_CONFIG, `This is ${podcast.name}. Latest episode: ${episode.title.substring(0, 150)}. Unfortunately, the streaming audio is not working properly right now. Please try option 0 for system test, or try NPR option 1 which usually works reliably.`);
-      twiml.say(VOICE_CONFIG, `Returning to main menu.`);
-      twiml.redirect('/webhook/ivr-main');
-    } else {
-      // Stream the podcast directly from URL
-      console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
-      gather.play({ loop: 1 }, finalAudioUrl);
-    }
+    // Stream the podcast directly from URL
+    console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
+    gather.play({ loop: 1 }, finalAudioUrl);
     
     twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.`);
     
