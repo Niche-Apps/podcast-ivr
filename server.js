@@ -871,10 +871,13 @@ app.get('/webhook/play-episode', async (req, res) => {
       timeout: 5
     });
     
-    // Use a simplified approach - if URL is too complex, fall back to summary
-    if (finalAudioUrl.length > 200 || finalAudioUrl.split('/').length > 8) {
-      console.log(`⚠️ Complex URL detected, using summary fallback`);
-      gather.say(VOICE_CONFIG, `This is ${podcast.name}. Latest episode: ${episode.title.substring(0, 100)}. Unfortunately, the full audio is not available right now. Please try another podcast or call back later.`);
+    // Check if this is a problematic URL type
+    const isSimplecastInjector = finalAudioUrl.includes('injector.simplecastaudio.com');
+    const isComplexUrl = finalAudioUrl.length > 200 || finalAudioUrl.split('/').length > 8;
+    
+    if (isSimplecastInjector || isComplexUrl) {
+      console.log(`⚠️ Problematic URL detected (${isSimplecastInjector ? 'Simplecast injector' : 'Complex URL'}), using summary fallback`);
+      gather.say(VOICE_CONFIG, `This is ${podcast.name}. Latest episode: ${episode.title.substring(0, 150)}. Unfortunately, the streaming audio is not working properly right now. Please try option 0 for system test, or try NPR option 1 which usually works reliably.`);
       twiml.say(VOICE_CONFIG, `Returning to main menu.`);
       twiml.redirect('/webhook/ivr-main');
     } else {
