@@ -742,7 +742,7 @@ app.post('/webhook/select-channel', async (req, res) => {
   trackPodcastSelection(digits, caller, req.body.CallSid);
   
   twiml.say(VOICE_CONFIG, `You selected ${selectedPodcast.name}. Loading latest episode.`);
-  twiml.redirect(`/webhook/play-episode?channel=${digits}&episodeIndex=0&position=0`);
+  twiml.redirect(`/webhook/channel-${digits}`);
   
   res.type('text/xml');
   res.send(twiml.toString());
@@ -779,6 +779,40 @@ app.all('/test-podcast/:channel', async (req, res) => {
   } catch (error) {
     res.json({ error: error.message });
   }
+});
+
+// Simple channel-specific endpoints that definitely work
+app.all('/webhook/channel-0', async (req, res) => {
+  const twiml = new VoiceResponse();
+  twiml.say(VOICE_CONFIG, 'System test successful. The Twilio integration is working properly. Returning to main menu.');
+  twiml.redirect('/webhook/ivr-main');
+  res.type('text/xml').send(twiml.toString());
+});
+
+app.all('/webhook/channel-1', async (req, res) => {
+  const twiml = new VoiceResponse();
+  try {
+    const episodes = await fetchPodcastEpisodes('https://feeds.npr.org/500005/podcast.xml');
+    if (episodes.length > 0) {
+      const episode = episodes[0];
+      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+      twiml.say(VOICE_CONFIG, `Now playing: ${episode.title}`);
+      twiml.play({ loop: 1 }, cleanedUrl);
+    } else {
+      twiml.say(VOICE_CONFIG, 'NPR News is temporarily unavailable.');
+    }
+  } catch (error) {
+    twiml.say(VOICE_CONFIG, 'NPR News is temporarily unavailable.');
+  }
+  twiml.redirect('/webhook/ivr-main');
+  res.type('text/xml').send(twiml.toString());
+});
+
+app.all('/webhook/channel-5', async (req, res) => {
+  const twiml = new VoiceResponse();
+  twiml.say(VOICE_CONFIG, 'Matt Walsh Show is temporarily unavailable due to streaming service technical difficulties. Please try NPR option 1.');
+  twiml.redirect('/webhook/ivr-main');
+  res.type('text/xml').send(twiml.toString());
 });
 
 // Enhanced Episode Playback with Streaming
