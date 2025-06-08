@@ -1,15 +1,17 @@
 require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
-const { 
-    fetchPodcastEpisodes, 
-    cleanAudioUrl, 
-    resolveAndValidateUrl, 
-    resolveSimplecastInjector,
-    VOICE_CONFIG,
-    CHUNK_DURATION,
-    SKIP_DURATION 
-} = require('./podcast-streaming');
+const axios = require('axios');
+
+// Voice configuration  
+const VOICE_CONFIG = {
+    voice: 'Polly.Brian',
+    language: 'en-GB'
+};
+
+// Constants
+const CHUNK_DURATION = 360;
+const SKIP_DURATION = 120;
 const fs = require('fs');
 const path = require('path');
 
@@ -37,6 +39,113 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // Initialize Audio Pipeline
 let audioPipeline;
+
+// Simplified RSS fetching function
+async function fetchPodcastEpisodes(rssUrl) {
+    console.log(`🔍 Fetching episodes from: ${rssUrl}`);
+    
+    try {
+        const response = await axios.get(rssUrl, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+            }
+        });
+        
+        console.log(`✅ RSS fetch successful, content length: ${response.data.length}`);
+        
+        const xmlText = response.data;
+        const episodes = [];
+        
+        // Simple regex-based episode extraction
+        const itemMatches = xmlText.match(/<item[\s\S]*?<\/item>/gi) || [];
+        console.log(`📄 Found ${itemMatches.length} episodes in feed`);
+        
+        // Process first 10 episodes for better performance
+        for (let i = 0; i < Math.min(itemMatches.length, 10); i++) {
+            const item = itemMatches[i];
+            
+            // Extract title
+            const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/i) ||
+                              item.match(/<title[^>]*>(.*?)<\/title>/i);
+            
+            // Extract audio URL
+            const enclosureMatch = item.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*/i) ||
+                                  item.match(/<media:content[^>]+url=["']([^"']+)["'][^>]*/i);
+            
+            if (titleMatch && enclosureMatch) {
+                const title = titleMatch[1]
+                    .replace(/<[^>]*>/g, '')
+                    .replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'")
+                    .trim();
+                
+                let audioUrl = enclosureMatch[1]
+                    .trim()
+                    .replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'");
+                
+                // Basic URL validation
+                if (audioUrl.startsWith('http') && title.length > 0) {
+                    episodes.push({ title, audioUrl });
+                    console.log(`✓ Episode: "${title.substring(0, 50)}..."`);
+                }
+            }
+        }
+        
+        console.log(`🎯 Successfully parsed ${episodes.length} episodes`);
+        return episodes;
+        
+    } catch (error) {
+        console.error(`❌ RSS fetch failed for ${rssUrl}:`, error.message);
+        return [];
+    }
+}
+
+// Basic URL cleaning function
+function cleanAudioUrl(url) {
+    if (!url || typeof url !== 'string') return url;
+    
+    console.log(`🧹 Cleaning URL: ${url.substring(0, 80)}...`);
+    
+    try {
+        let cleaned = url;
+        
+        // Remove common tracking redirects
+        const trackingPatterns = [
+            /^https?:\/\/[^\/]*podtrac\.com\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*chartable\.com\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*pdst\.fm\/e\//i,
+            /^https?:\/\/[^\/]*chtbl\.com\/track\/[^\/]+\//i
+        ];
+        
+        for (const pattern of trackingPatterns) {
+            if (pattern.test(cleaned)) {
+                let newUrl = cleaned.replace(pattern, '');
+                if (!newUrl.startsWith('http') && newUrl.includes('.')) {
+                    newUrl = 'https://' + newUrl;
+                }
+                if (newUrl !== cleaned) {
+                    console.log(`🗑️ Removed tracking: ${newUrl.substring(0, 80)}...`);
+                    cleaned = newUrl;
+                }
+            }
+        }
+        
+        return cleaned;
+        
+    } catch (error) {
+        console.error(`⚠️ URL cleaning error:`, error.message);
+        return url;
+    }
+}
 
 // Podcast configuration
 const ALL_PODCASTS = {
@@ -637,12 +746,12 @@ app.get('/webhook/play-episode', async (req, res) => {
   }
   
   try {
-    console.log(`Fetching episodes from: ${podcast.rssUrl}`);
+    console.log(`🔍 Fetching episodes from: ${podcast.rssUrl}`);
     const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
     
     if (!episodes || episodes.length === 0) {
-      console.log(`No episodes found for ${podcast.name}`);
-      twiml.say(VOICE_CONFIG, `No episodes found for ${podcast.name}.`);
+      console.log(`❌ No episodes found for ${podcast.name}`);
+      twiml.say(VOICE_CONFIG, `Sorry, no episodes are available for ${podcast.name} right now. Please try another podcast.`);
       twiml.redirect('/webhook/ivr-main');
       return res.type('text/xml').send(twiml.toString());
     }
@@ -650,98 +759,65 @@ app.get('/webhook/play-episode', async (req, res) => {
     const episode = episodes[episodeIndex];
     if (!episode) {
       if (episodeIndex > 0) {
-        twiml.say(VOICE_CONFIG, 'No more episodes. Returning to latest episode.');
+        console.log(`⚠️ Episode ${episodeIndex} not found, trying latest episode`);
         twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0&position=0`);
       } else {
-        twiml.say(VOICE_CONFIG, 'Episode not found.');
+        console.log(`❌ No episodes available for ${podcast.name}`);
+        twiml.say(VOICE_CONFIG, 'No episodes available. Please try another podcast.');
         twiml.redirect('/webhook/ivr-main');
       }
       return res.type('text/xml').send(twiml.toString());
     }
     
-    console.log(`Raw audio URL: ${episode.audioUrl}`);
+    console.log(`📻 Episode found: "${episode.title}"`);
+    console.log(`🔗 Raw audio URL: ${episode.audioUrl.substring(0, 100)}...`);
     
-    // Clean and resolve URL
+    // Clean the URL
     const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-    console.log(`Cleaned URL: ${cleanedUrl}`);
+    console.log(`🧹 Cleaned URL: ${cleanedUrl.substring(0, 100)}...`);
     
-    // Special handling for Simplecast URLs
-    let finalAudioUrl = cleanedUrl;
-    if (cleanedUrl.includes('simplecastaudio.com')) {
-      console.log(`Attempting Simplecast resolution...`);
-      try {
-        const simplecastResult = await resolveSimplecastInjector(cleanedUrl);
-        if (simplecastResult.success && simplecastResult.resolvedUrl !== cleanedUrl) {
-          finalAudioUrl = simplecastResult.resolvedUrl;
-          console.log(`✓ Simplecast resolved to: ${finalAudioUrl}`);
-        }
-      } catch (resolutionError) {
-        console.log(`Simplecast resolution failed, using cleaned URL: ${resolutionError.message}`);
-      }
-    }
-    
-    // Validate URL (for non-Simplecast URLs)
-    if (!cleanedUrl.includes('simplecastaudio.com')) {
-      const urlResult = await resolveAndValidateUrl(finalAudioUrl);
-      if (!urlResult.success) {
-        console.error(`URL validation failed: ${urlResult.error}`);
-        
-        // Try next episode if this is the first
-        if (episodeIndex === 0 && episodes.length > 1) {
-          console.log(`Trying next episode automatically...`);
-          twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=1&position=0`);
-          return res.type('text/xml').send(twiml.toString());
-        } else {
-          twiml.say(VOICE_CONFIG, 'There was a problem accessing this episode.');
-          twiml.redirect('/webhook/ivr-main');
-          return res.type('text/xml').send(twiml.toString());
-        }
-      }
-      finalAudioUrl = urlResult.url;
-    }
-    
-    console.log(`✅ Final streaming URL: ${finalAudioUrl}`);
+    // Use cleaned URL directly - no complex validation to avoid timeouts
+    const finalAudioUrl = cleanedUrl;
+    console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
     
     // Announce episode
     const positionMins = Math.floor(position / 60);
     if (position === 0) {
-      twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 100)}`);
+      twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 80)}`);
     } else {
       twiml.say(VOICE_CONFIG, `Resuming at ${positionMins} minutes.`);
     }
     
-    // Set up playback controls
+    // Set up playback controls with longer timeout
     const gather = twiml.gather({
       numDigits: 1,
       action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${position}`,
       method: 'POST',
-      timeout: 3
+      timeout: 5
     });
     
     // Stream the podcast directly from URL
-    console.log(`🎵 Streaming from: ${finalAudioUrl.substring(0, 100)}...`);
+    console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
     gather.play({ loop: 1 }, finalAudioUrl);
     
-    twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 back, 6 forward, 0 for menu.`);
+    twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.`);
     
     // Continue to next chunk after timeout
     const nextPosition = position + CHUNK_DURATION;
     twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex}&position=${nextPosition}`);
     
   } catch (error) {
-    console.error('Streaming playback error:', error.message);
+    console.error(`❌ Episode playback error for ${podcast.name}:`, error.message);
+    console.error(`Error stack:`, error.stack);
     
-    let errorMessage = 'Unable to play this podcast at the moment.';
-    if (error.message.includes('timeout')) {
-      errorMessage = 'The podcast server is taking too long to respond.';
-    } else if (error.message.includes('404')) {
-      errorMessage = 'The podcast episode was not found.';
-    } else if (error.message.includes('403')) {
-      errorMessage = 'Access to this podcast episode is restricted.';
+    // Try next episode automatically if this is the first episode
+    if (episodeIndex === 0) {
+      console.log(`🔄 Trying next episode due to error...`);
+      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=1&position=0`);
+    } else {
+      twiml.say(VOICE_CONFIG, `Sorry, there's a problem with this podcast right now. Please try another one.`);
+      twiml.redirect('/webhook/ivr-main');
     }
-    
-    twiml.say(VOICE_CONFIG, `${errorMessage} Returning to menu.`);
-    twiml.redirect('/webhook/ivr-main');
   }
   
   res.type('text/xml');
