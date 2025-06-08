@@ -168,25 +168,32 @@ function cleanAudioUrl(url) {
     }
 }
 
-// Podcast configuration - All channels fully working
-const ALL_PODCASTS = {
+// Load podcast configuration from external JSON file
+let ALL_PODCASTS = {};
+let EXTENSION_PODCASTS = {};
+
+try {
+  const podcastConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'podcast-feeds.json'), 'utf8'));
+  
+  // Load main feeds
+  ALL_PODCASTS = podcastConfig.feeds;
+  
+  // Load extension feeds (ready to activate)
+  EXTENSION_PODCASTS = podcastConfig.extensions;
+  
+  console.log(`✅ Loaded ${Object.keys(ALL_PODCASTS).length} podcast feeds from podcast-feeds.json`);
+  console.log(`📋 ${Object.keys(EXTENSION_PODCASTS).length} extension feeds available`);
+  
+} catch (error) {
+  console.error('❌ Failed to load podcast-feeds.json:', error.message);
+  
+  // Fallback to minimal configuration
+  ALL_PODCASTS = {
     '0': { name: 'System Test', rssUrl: 'STATIC_TEST' },
-    '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' },
-    '2': { name: 'This American Life', rssUrl: 'https://feeds.thisamericanlife.org/talpodcast' },
-    '3': { name: 'The Daily', rssUrl: 'https://feeds.simplecast.com/54nAGcIl' },
-    '4': { name: 'Serial', rssUrl: 'https://feeds.serialpodcast.org/serial' },
-    '5': { name: 'Matt Walsh Show', rssUrl: 'https://feeds.simplecast.com/pp_b9xO6' },
-    '6': { name: 'Ben Shapiro Show', rssUrl: 'https://feeds.simplecast.com/C0fPpQ64' },
-    '7': { name: 'Michael Knowles Show', rssUrl: 'https://feeds.simplecast.com/6c2VScgo' },
-    '8': { name: 'Andrew Klavan Show', rssUrl: 'https://feeds.simplecast.com/2Dy_5daq' },
-    '9': { name: 'Pints with Aquinas', rssUrl: 'https://feeds.acast.com/public/shows/683607331b846c88bdfb0f70' },
-    '10': { name: 'Joe Rogan', rssUrl: 'https://feeds.megaphone.fm/GLT1412515089' },
-    '11': { name: 'TimCast IRL', rssUrl: 'https://feeds.libsyn.com/574450/rss' },
-    '12': { name: 'Louder with Crowder', rssUrl: 'https://media.rss.com/louder-with-crowder/feed.xml' },
-    '13': { name: 'Lex Fridman', rssUrl: 'https://lexfridman.com/feed/podcast/' },
-    '14': { name: 'Matt Walsh 2', rssUrl: 'https://www.spreaker.com/show/6636540/episodes/feed' },
-    '20': { name: 'Morning Wire', rssUrl: 'https://feeds.simplecast.com/WCb5SgYj' }
-};
+    '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' }
+  };
+  console.log('⚠️ Using fallback podcast configuration');
+}
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -808,6 +815,95 @@ app.post('/webhook/select-channel', async (req, res) => {
   
   res.type('text/xml');
   res.send(twiml.toString());
+});
+
+// API endpoint to add new podcast feeds
+app.post('/api/feeds/add', async (req, res) => {
+  try {
+    const { channel, name, rssUrl, description } = req.body;
+    
+    if (!channel || !name || !rssUrl) {
+      return res.status(400).json({ error: 'Missing required fields: channel, name, rssUrl' });
+    }
+    
+    // Load current config
+    const configPath = path.join(__dirname, 'podcast-feeds.json');
+    const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    
+    // Add new feed to extensions
+    podcastConfig.extensions[channel] = {
+      name,
+      rssUrl,
+      description: description || 'Custom added feed'
+    };
+    
+    // Update metadata
+    podcastConfig.metadata.lastUpdated = new Date().toISOString().split('T')[0];
+    podcastConfig.metadata.totalFeeds = Object.keys(podcastConfig.feeds).length + Object.keys(podcastConfig.extensions).length;
+    
+    // Save updated config
+    fs.writeFileSync(configPath, JSON.stringify(podcastConfig, null, 2));
+    
+    // Reload in memory
+    EXTENSION_PODCASTS = podcastConfig.extensions;
+    
+    res.json({
+      success: true,
+      message: `Added ${name} as channel ${channel}`,
+      feed: podcastConfig.extensions[channel]
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API endpoint to activate extension feeds
+app.post('/api/feeds/activate/:channel', async (req, res) => {
+  try {
+    const { channel } = req.params;
+    
+    if (!EXTENSION_PODCASTS[channel]) {
+      return res.status(404).json({ error: 'Extension feed not found' });
+    }
+    
+    // Load current config
+    const configPath = path.join(__dirname, 'podcast-feeds.json');
+    const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    
+    // Move from extensions to main feeds
+    podcastConfig.feeds[channel] = podcastConfig.extensions[channel];
+    delete podcastConfig.extensions[channel];
+    
+    // Update metadata
+    podcastConfig.metadata.lastUpdated = new Date().toISOString().split('T')[0];
+    
+    // Save updated config
+    fs.writeFileSync(configPath, JSON.stringify(podcastConfig, null, 2));
+    
+    // Reload in memory
+    ALL_PODCASTS = podcastConfig.feeds;
+    EXTENSION_PODCASTS = podcastConfig.extensions;
+    
+    res.json({
+      success: true,
+      message: `Activated ${podcastConfig.feeds[channel].name} as channel ${channel}`,
+      feed: podcastConfig.feeds[channel]
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API endpoint to list available feeds
+app.get('/api/feeds/list', (req, res) => {
+  res.json({
+    activeFeeds: ALL_PODCASTS,
+    extensionFeeds: EXTENSION_PODCASTS,
+    totalActive: Object.keys(ALL_PODCASTS).length,
+    totalExtensions: Object.keys(EXTENSION_PODCASTS).length
+  });
 });
 
 // Test endpoint to check RSS feeds directly

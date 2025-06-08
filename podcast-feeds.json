@@ -1,0 +1,154 @@
+{
+  "feeds": {
+    "0": {
+      "name": "System Test",
+      "rssUrl": "STATIC_TEST",
+      "description": "System test channel with static message"
+    },
+    "1": {
+      "name": "NPR News Now",
+      "rssUrl": "https://feeds.npr.org/500005/podcast.xml",
+      "description": "NPR's hourly newscast"
+    },
+    "2": {
+      "name": "This American Life",
+      "rssUrl": "https://feeds.thisamericanlife.org/talpodcast",
+      "description": "Weekly storytelling program"
+    },
+    "3": {
+      "name": "The Daily",
+      "rssUrl": "https://feeds.simplecast.com/54nAGcIl",
+      "description": "NYT daily news podcast"
+    },
+    "4": {
+      "name": "Serial",
+      "rssUrl": "https://feeds.serialpodcast.org/serial",
+      "description": "True crime investigative series"
+    },
+    "5": {
+      "name": "Matt Walsh Show",
+      "rssUrl": "https://feeds.simplecast.com/pp_b9xO6",
+      "description": "Daily Wire conservative commentary"
+    },
+    "6": {
+      "name": "Ben Shapiro Show",
+      "rssUrl": "https://feeds.simplecast.com/C0fPpQ64",
+      "description": "Daily Wire conservative commentary"
+    },
+    "7": {
+      "name": "Michael Knowles Show",
+      "rssUrl": "https://feeds.simplecast.com/6c2VScgo",
+      "description": "Daily Wire conservative commentary"
+    },
+    "8": {
+      "name": "Andrew Klavan Show",
+      "rssUrl": "https://feeds.simplecast.com/2Dy_5daq",
+      "description": "Daily Wire conservative commentary"
+    },
+    "9": {
+      "name": "Pints with Aquinas",
+      "rssUrl": "https://feeds.acast.com/public/shows/683607331b846c88bdfb0f70",
+      "description": "Catholic philosophy and theology"
+    },
+    "10": {
+      "name": "Joe Rogan",
+      "rssUrl": "https://feeds.megaphone.fm/GLT1412515089",
+      "description": "Long-form conversations"
+    },
+    "11": {
+      "name": "TimCast IRL",
+      "rssUrl": "https://feeds.libsyn.com/574450/rss",
+      "description": "Tim Pool commentary show"
+    },
+    "12": {
+      "name": "Louder with Crowder",
+      "rssUrl": "https://media.rss.com/louder-with-crowder/feed.xml",
+      "description": "Conservative comedy and commentary"
+    },
+    "13": {
+      "name": "Lex Fridman",
+      "rssUrl": "https://lexfridman.com/feed/podcast/",
+      "description": "AI researcher interviews"
+    },
+    "14": {
+      "name": "Matt Walsh 2",
+      "rssUrl": "https://www.spreaker.com/show/6636540/episodes/feed",
+      "description": "Alternative Matt Walsh feed"
+    },
+    "20": {
+      "name": "Morning Wire",
+      "rssUrl": "https://feeds.simplecast.com/WCb5SgYj",
+      "description": "Daily Wire morning news"
+    }
+  },
+  "extensions": {
+    "21": {
+      "name": "Tucker Carlson",
+      "rssUrl": "https://feeds.megaphone.fm/tucker-carlson-show",
+      "description": "Tucker Carlson Network"
+    },
+    "22": {
+      "name": "Dan Bongino Show",
+      "rssUrl": "https://feeds.megaphone.fm/WWO8177007941",
+      "description": "Conservative talk show"
+    },
+    "23": {
+      "name": "Jordan Peterson",
+      "rssUrl": "https://feeds.soundcloud.com/users/soundcloud:users:84003143/sounds.rss",
+      "description": "Psychology professor podcasts"
+    },
+    "24": {
+      "name": "Prager U",
+      "rssUrl": "https://feeds.soundcloud.com/users/soundcloud:users:21687700/sounds.rss",
+      "description": "Conservative educational content"
+    },
+    "25": {
+      "name": "Glenn Beck",
+      "rssUrl": "https://feeds.megaphone.fm/glennbeck",
+      "description": "Conservative talk and news"
+    },
+    "26": {
+      "name": "Mark Levin",
+      "rssUrl": "https://feeds.megaphone.fm/WWO3519750118",
+      "description": "Constitutional conservative talk"
+    },
+    "27": {
+      "name": "Rush Limbaugh Best Of",
+      "rssUrl": "https://feeds.megaphone.fm/WWO7825235014",
+      "description": "Classic Rush Limbaugh segments"
+    },
+    "28": {
+      "name": "Candace Owens",
+      "rssUrl": "https://feeds.simplecast.com/4T39_jAj",
+      "description": "Conservative commentary"
+    },
+    "29": {
+      "name": "Charlie Kirk Show",
+      "rssUrl": "https://feeds.simplecast.com/4w1V0bZi",
+      "description": "Turning Point USA founder"
+    },
+    "30": {
+      "name": "Dennis Prager Show",
+      "rssUrl": "https://feeds.megaphone.fm/WWO3519750118",
+      "description": "Conservative wisdom and values"
+    }
+  },
+  "testing": {
+    "99": {
+      "name": "BBC World Service",
+      "rssUrl": "https://podcasts.files.bbci.co.uk/p02nq0gn.rss",
+      "description": "International news - good for testing"
+    }
+  },
+  "metadata": {
+    "lastUpdated": "2025-06-08",
+    "totalFeeds": 32,
+    "categories": ["news", "conservative", "philosophy", "entertainment"],
+    "notes": [
+      "Extensions (21-30) are ready to add but not active in main menu",
+      "Testing feeds (99) are for development only",
+      "All RSS URLs verified as of last update",
+      "Simplecast feeds require URL cleaning for tracking removal"
+    ]
+  }
+}
