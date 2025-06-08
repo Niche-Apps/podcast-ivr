@@ -43,36 +43,36 @@ function cleanAudioUrl(originalUrl) {
         
         // Step 1: Remove tracking domains and redirects (iteratively)
         const trackingPatterns = [
-            /https?:\/\/[^\/]*claritaspod\.com\/measure\//i,
-            /https?:\/\/[^\/]*arttrk\.com\/p\//i,
-            /https?:\/\/[^\/]*podscribe\.com\/rss\/p\//i,
-            /https?:\/\/[^\/]*pfx\.vpixl\.com\//i,
-            /https?:\/\/[^\/]*prfx\.byspotify\.com\/e\//i,
-            /https?:\/\/[^\/]*dts\.podtrac\.com\/redirect\.(mp3|aac)\//i,
-            /https?:\/\/[^\/]*mgln\.ai\/e\//i,
-            /https?:\/\/chtbl\.com\/track\/[A-Z0-9]+\//i,
-            /https?:\/\/www\.podtrac\.com\/pts\/redirect\.(mp3|aac)\//i,
-            /https?:\/\/pdst\.fm\/e\//i,
-            /https?:\/\/gnrl\.fm\//i,
-            /https?:\/\/proxy\.pocketcasts\.com\//i,
-            /https?:\/\/audio\.simplecast\.com\/tracking\//i,
-            /https?:\/\/stats\.adswizz\.com\//i,
-            /https?:\/\/analytics\.tritondigital\.com\//i,
-            /https?:\/\/op3\.dev\/[^\/]+\//i,
-            /https?:\/\/traffic\.omny\.fm\/[^\/]+\//i,
-            /https?:\/\/tracking\.feedpress\.it\/[^\/]+\//i,
-            /https?:\/\/aw\.noxsolutions\.com\/[^\/]+\//i,
-            /https?:\/\/play\.podtrac\.com\/npr-[^\/]+\//i,
-            /https?:\/\/megaphone\.fm\/ad\/[^\/]+\//i,
-            /https?:\/\/pixel\.simplecastapps\.com\/[^\/]+\//i,
-            /https?:\/\/redirect\.xn--simplecast-t0a\.com\//i,
-            /https?:\/\/www\.google\.com\/url\?q=/i,
-            /https?:\/\/feedproxy\.google\.com\//i,
-            /https?:\/\/[^\/]*doubleclick\.net\/[^\/]+\//i,
-            /https?:\/\/[^\/]*googletagmanager\.com\/[^\/]+\//i,
-            /https?:\/\/[^\/]*chartable\.com\/[^\/]+\//i,
-            /https?:\/\/[^\/]*spotify\.com\/track\/[^\/]+\//i,
-            /https?:\/\/[^\/]*podsights\.com\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*claritaspod\.com\/measure\//i,
+            /^https?:\/\/[^\/]*arttrk\.com\/p\//i,
+            /^https?:\/\/[^\/]*podscribe\.com\/rss\/p\//i,
+            /^https?:\/\/[^\/]*pfx\.vpixl\.com\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*prfx\.byspotify\.com\/e\//i,
+            /^https?:\/\/[^\/]*dts\.podtrac\.com\/redirect\.(mp3|aac)\//i,
+            /^https?:\/\/[^\/]*mgln\.ai\/e\//i,
+            /^https?:\/\/chtbl\.com\/track\/[A-Z0-9]+\//i,
+            /^https?:\/\/www\.podtrac\.com\/pts\/redirect\.(mp3|aac)\//i,
+            /^https?:\/\/pdst\.fm\/e\//i,
+            /^https?:\/\/gnrl\.fm\//i,
+            /^https?:\/\/proxy\.pocketcasts\.com\//i,
+            /^https?:\/\/audio\.simplecast\.com\/tracking\//i,
+            /^https?:\/\/stats\.adswizz\.com\//i,
+            /^https?:\/\/analytics\.tritondigital\.com\//i,
+            /^https?:\/\/op3\.dev\/[^\/]+\//i,
+            /^https?:\/\/traffic\.omny\.fm\/[^\/]+\//i,
+            /^https?:\/\/tracking\.feedpress\.it\/[^\/]+\//i,
+            /^https?:\/\/aw\.noxsolutions\.com\/[^\/]+\//i,
+            /^https?:\/\/play\.podtrac\.com\/npr-[^\/]+\//i,
+            /^https?:\/\/megaphone\.fm\/ad\/[^\/]+\//i,
+            /^https?:\/\/pixel\.simplecastapps\.com\/[^\/]+\//i,
+            /^https?:\/\/redirect\.xn--simplecast-t0a\.com\//i,
+            /^https?:\/\/www\.google\.com\/url\?q=/i,
+            /^https?:\/\/feedproxy\.google\.com\//i,
+            /^https?:\/\/[^\/]*doubleclick\.net\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*googletagmanager\.com\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*chartable\.com\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*spotify\.com\/track\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*podsights\.com\/[^\/]+\//i,
         ];
         
         let urlChangedInIteration;
@@ -81,7 +81,11 @@ function cleanAudioUrl(originalUrl) {
             previousUrl = cleanedUrl;
             for (const pattern of trackingPatterns) {
                 if (pattern.test(cleanedUrl)) {
-                    const newUrl = cleanedUrl.replace(pattern, '');
+                    let newUrl = cleanedUrl.replace(pattern, '');
+                    // Add back https if removed
+                    if (!newUrl.startsWith('http') && newUrl.includes('.')) {
+                        newUrl = 'https://' + newUrl;
+                    }
                     if (newUrl !== cleanedUrl) {
                         console.log(`Removed tracking pattern: ${pattern}, URL now: ${newUrl}`);
                         cleanedUrl = newUrl;
