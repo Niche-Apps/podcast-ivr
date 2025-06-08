@@ -15,6 +15,9 @@ const SKIP_DURATION = 120;
 const fs = require('fs');
 const path = require('path');
 
+// Weather API configuration
+const WEATHER_API_KEY = process.env.WEATHER_API_KEY || '3d01c291215870d467a4f3881e114bf6';
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -107,6 +110,62 @@ async function fetchPodcastEpisodes(rssUrl) {
     } catch (error) {
         console.error(`❌ RSS fetch failed for ${rssUrl}:`, error.message);
         return [];
+    }
+}
+
+// Weather service function
+async function getWeatherForecast(zipcode) {
+    console.log(`🌤️ Fetching weather for zipcode: ${zipcode}`);
+    
+    try {
+        // Get coordinates from zipcode
+        const geoResponse = await axios.get(
+            `http://api.openweathermap.org/geo/1.0/zip?zip=${zipcode},US&appid=${WEATHER_API_KEY}`,
+            { timeout: 5000 }
+        );
+        
+        if (!geoResponse.data) {
+            throw new Error('Invalid zipcode');
+        }
+        
+        const { lat, lon, name } = geoResponse.data;
+        console.log(`📍 Location found: ${name} (${lat}, ${lon})`);
+        
+        // Get current weather and forecast
+        const weatherResponse = await axios.get(
+            `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=imperial`,
+            { timeout: 5000 }
+        );
+        
+        const data = weatherResponse.data;
+        const current = data.list[0];
+        const today = data.list.slice(0, 8); // Next 24 hours
+        
+        // Format weather report
+        const currentTemp = Math.round(current.main.temp);
+        const feelsLike = Math.round(current.main.feels_like);
+        const description = current.weather[0].description;
+        const humidity = current.main.humidity;
+        const windSpeed = Math.round(current.wind.speed);
+        
+        // Get high/low for today
+        const todayTemps = today.map(item => item.main.temp);
+        const highTemp = Math.round(Math.max(...todayTemps));
+        const lowTemp = Math.round(Math.min(...todayTemps));
+        
+        const weatherReport = `Weather forecast for ${name}. Current temperature is ${currentTemp} degrees Fahrenheit, feels like ${feelsLike}. Current conditions: ${description}. Today's high will be ${highTemp} degrees, low ${lowTemp} degrees. Humidity ${humidity} percent. Wind speed ${windSpeed} miles per hour.`;
+        
+        console.log(`✅ Weather report generated for ${name}`);
+        return weatherReport;
+        
+    } catch (error) {
+        console.error(`❌ Weather fetch failed for ${zipcode}:`, error.message);
+        
+        if (error.message.includes('Invalid zipcode')) {
+            return `Sorry, I couldn't find weather information for zipcode ${zipcode}. Please make sure you entered a valid US zipcode.`;
+        } else {
+            return `Sorry, weather information is temporarily unavailable. Please try again later.`;
+        }
     }
 }
 
@@ -711,7 +770,7 @@ app.all('/webhook/ivr-main', (req, res) => {
     method: 'POST'
   });
   
-  const menuText = 'Podcast Hotline. Press 0 for system test, 1 for NPR, 2 for This American Life, 3 for The Daily, 4 for Serial, 5 for Matt Walsh, 6 for Ben Shapiro, 7 for Michael Knowles, 8 for Andrew Klavan, 9 for Pints with Aquinas, 10 for Joe Rogan, 11 for Tim Pool, 12 for Crowder, 13 for Lex Fridman, 20 for Morning Wire, or star to repeat.';
+  const menuText = 'Podcast Hotline. Press 0 for system test, 1 for weather forecast, 2 for NPR, 3 for This American Life, 4 for The Daily, 5 for Serial, 6 for Matt Walsh, 7 for Ben Shapiro, 8 for Michael Knowles, 9 for Andrew Klavan, 10 for Pints with Aquinas, 11 for Joe Rogan, 12 for Tim Pool, 13 for Crowder, 14 for Lex Fridman, 20 for Morning Wire, or star to repeat.';
   
   gather.say(VOICE_CONFIG, menuText);
   
@@ -757,6 +816,26 @@ app.post('/webhook/select-channel', async (req, res) => {
     // Handle static test channel
     if (selectedPodcast.rssUrl === 'STATIC_TEST') {
       twiml.say(VOICE_CONFIG, 'System test successful. The Twilio integration is working properly.');
+      twiml.redirect('/webhook/ivr-main');
+      res.type('text/xml');
+      return res.send(twiml.toString());
+    }
+    
+    // Handle weather service
+    if (selectedPodcast.rssUrl === 'WEATHER_SERVICE') {
+      twiml.say(VOICE_CONFIG, 'Weather forecast service. Please enter your 5-digit zipcode followed by the pound key.');
+      
+      const gather = twiml.gather({
+        numDigits: 5,
+        timeout: 10,
+        finishOnKey: '#',
+        action: '/webhook/weather-zipcode',
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Enter your zipcode now.');
+      
+      twiml.say(VOICE_CONFIG, 'I did not receive your zipcode. Returning to main menu.');
       twiml.redirect('/webhook/ivr-main');
       res.type('text/xml');
       return res.send(twiml.toString());
@@ -904,6 +983,86 @@ app.get('/api/feeds/list', (req, res) => {
     totalActive: Object.keys(ALL_PODCASTS).length,
     totalExtensions: Object.keys(EXTENSION_PODCASTS).length
   });
+});
+
+// Handle weather zipcode input
+app.post('/webhook/weather-zipcode', async (req, res) => {
+  const zipcode = req.body.Digits;
+  const caller = req.body.From || req.body.Caller;
+  
+  console.log(`🌤️ Weather request: ${zipcode} from ${caller}`);
+  
+  const twiml = new VoiceResponse();
+  
+  if (!zipcode || zipcode.length !== 5 || !/^\d{5}$/.test(zipcode)) {
+    twiml.say(VOICE_CONFIG, 'Sorry, that does not appear to be a valid 5-digit zipcode. Please try again.');
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  try {
+    twiml.say(VOICE_CONFIG, `Getting weather forecast for zipcode ${zipcode.split('').join(' ')}.`);
+    
+    const weatherReport = await getWeatherForecast(zipcode);
+    twiml.say(VOICE_CONFIG, weatherReport);
+    
+    // Offer to repeat or return to menu
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 5,
+      action: '/webhook/weather-options',
+      method: 'POST'
+    });
+    gather.say(VOICE_CONFIG, 'Press 1 to hear the forecast again, 2 for a different zipcode, or any other key to return to the main menu.');
+    
+    twiml.redirect('/webhook/ivr-main');
+    
+  } catch (error) {
+    console.error(`❌ Weather error for ${zipcode}:`, error.message);
+    twiml.say(VOICE_CONFIG, 'Sorry, I was unable to get weather information at this time. Please try again later.');
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Handle weather options
+app.post('/webhook/weather-options', async (req, res) => {
+  const digits = req.body.Digits;
+  const twiml = new VoiceResponse();
+  
+  if (digits === '1') {
+    // Repeat last forecast - for now just redirect back to weather service
+    twiml.say(VOICE_CONFIG, 'Please enter your zipcode again to hear the forecast.');
+    const gather = twiml.gather({
+      numDigits: 5,
+      timeout: 10,
+      finishOnKey: '#',
+      action: '/webhook/weather-zipcode',
+      method: 'POST'
+    });
+    gather.say(VOICE_CONFIG, 'Enter your zipcode now.');
+    twiml.redirect('/webhook/ivr-main');
+  } else if (digits === '2') {
+    // Different zipcode
+    twiml.say(VOICE_CONFIG, 'Please enter a different zipcode.');
+    const gather = twiml.gather({
+      numDigits: 5,
+      timeout: 10,
+      finishOnKey: '#',
+      action: '/webhook/weather-zipcode',
+      method: 'POST'
+    });
+    gather.say(VOICE_CONFIG, 'Enter your zipcode now.');
+    twiml.redirect('/webhook/ivr-main');
+  } else {
+    // Return to main menu
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
 });
 
 // Test endpoint to check RSS feeds directly

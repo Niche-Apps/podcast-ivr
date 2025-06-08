@@ -6,71 +6,76 @@
       "description": "System test channel with static message"
     },
     "1": {
+      "name": "Weather Forecast",
+      "rssUrl": "WEATHER_SERVICE",
+      "description": "Current weather forecast by zipcode"
+    },
+    "2": {
       "name": "NPR News Now",
       "rssUrl": "https://feeds.npr.org/500005/podcast.xml",
       "description": "NPR's hourly newscast"
     },
-    "2": {
+    "3": {
       "name": "This American Life",
       "rssUrl": "https://feeds.thisamericanlife.org/talpodcast",
       "description": "Weekly storytelling program"
     },
-    "3": {
+    "4": {
       "name": "The Daily",
       "rssUrl": "https://feeds.simplecast.com/54nAGcIl",
       "description": "NYT daily news podcast"
     },
-    "4": {
+    "5": {
       "name": "Serial",
       "rssUrl": "https://feeds.serialpodcast.org/serial",
       "description": "True crime investigative series"
     },
-    "5": {
+    "6": {
       "name": "Matt Walsh Show",
       "rssUrl": "https://feeds.simplecast.com/pp_b9xO6",
       "description": "Daily Wire conservative commentary"
     },
-    "6": {
+    "7": {
       "name": "Ben Shapiro Show",
       "rssUrl": "https://feeds.simplecast.com/C0fPpQ64",
       "description": "Daily Wire conservative commentary"
     },
-    "7": {
+    "8": {
       "name": "Michael Knowles Show",
       "rssUrl": "https://feeds.simplecast.com/6c2VScgo",
       "description": "Daily Wire conservative commentary"
     },
-    "8": {
+    "9": {
       "name": "Andrew Klavan Show",
       "rssUrl": "https://feeds.simplecast.com/2Dy_5daq",
       "description": "Daily Wire conservative commentary"
     },
-    "9": {
+    "10": {
       "name": "Pints with Aquinas",
       "rssUrl": "https://pintswithaquinas.libsyn.com/rss",
       "description": "Catholic philosophy and theology"
     },
-    "10": {
+    "11": {
       "name": "Joe Rogan",
       "rssUrl": "https://feeds.megaphone.fm/GLT1412515089",
       "description": "Long-form conversations"
     },
-    "11": {
+    "12": {
       "name": "TimCast IRL",
       "rssUrl": "https://feeds.libsyn.com/574450/rss",
       "description": "Tim Pool commentary show"
     },
-    "12": {
+    "13": {
       "name": "Louder with Crowder",
       "rssUrl": "https://media.rss.com/louder-with-crowder/feed.xml",
       "description": "Conservative comedy and commentary"
     },
-    "13": {
+    "14": {
       "name": "Lex Fridman",
       "rssUrl": "https://lexfridman.com/feed/podcast/",
       "description": "AI researcher interviews"
     },
-    "14": {
+    "15": {
       "name": "Matt Walsh 2",
       "rssUrl": "https://www.spreaker.com/show/6636540/episodes/feed",
       "description": "Alternative Matt Walsh feed"
