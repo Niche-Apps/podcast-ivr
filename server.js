@@ -1229,20 +1229,20 @@ app.post('/webhook/select-channel', async (req, res) => {
     const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
     console.log(`🚀 Using direct proxy for playback: ${playUrl.substring(0, 80)}...`);
     
-    // Set up gather for controls with position tracking
+    // Set up gather for controls
     const gather = twiml.gather({
       numDigits: 1,
       timeout: 30, // Shorter timeout for better responsiveness
-      action: `/webhook/playback-control?channel=${digits}&episodeIndex=0&position=0`,
+      action: `/webhook/playback-control?channel=${digits}&episodeIndex=0`,
       method: 'POST'
     });
     
     // Play the podcast
     gather.play({ loop: 1 }, playUrl);
-    gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, or 0 for menu.');
+    gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to restart episode, 6 to skip episode, or 0 for menu.');
     
     // Fallback to continue current episode after timeout
-    twiml.redirect(`/webhook/playback-control?channel=${digits}&episodeIndex=0&position=0`);
+    twiml.redirect(`/webhook/playback-control?channel=${digits}&episodeIndex=0`);
     
   } catch (error) {
     console.error(`❌ Error playing ${selectedPodcast.name}:`, error.message);
@@ -1343,32 +1343,65 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
-// Audio proxy endpoint - simple direct streaming
+// Audio proxy endpoint with byte-range support for seeking
 app.get('/proxy-audio/:encodedUrl', async (req, res) => {
   try {
     let { encodedUrl } = req.params;
+    const startTime = parseInt(req.query.start) || 0;
     
     // Remove any query parameters from the encoded URL path
     encodedUrl = encodedUrl.split('?')[0];
     
     const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     
-    console.log(`🎵 Streaming: ${originalUrl.substring(0, 100)}...`);
+    console.log(`🎵 Streaming: ${originalUrl.substring(0, 100)}... ${startTime > 0 ? `(seeking to ${startTime}s)` : ''}`);
     
-    // Stream with minimal redirects for fast loading
+    // First, get content-length to calculate byte offset
+    let headers = {
+      'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
+      'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
+    };
+    
+    // If seeking is requested, try to calculate byte offset
+    if (startTime > 0) {
+      try {
+        // Get file info first
+        const headResponse = await axios({
+          method: 'HEAD',
+          url: originalUrl,
+          timeout: 10000,
+          maxRedirects: 2,
+          headers: headers
+        });
+        
+        const contentLength = parseInt(headResponse.headers['content-length']) || 0;
+        if (contentLength > 0) {
+          // Estimate byte position assuming average bitrate
+          // Most podcasts are ~128kbps = 16KB/s
+          const estimatedByteRate = 16000; // bytes per second
+          const byteOffset = Math.min(startTime * estimatedByteRate, contentLength - 1000000); // Leave 1MB buffer
+          
+          if (byteOffset > 0) {
+            headers['Range'] = `bytes=${byteOffset}-`;
+            console.log(`📍 Requesting range: bytes=${byteOffset}- (estimated from ${startTime}s)`);
+          }
+        }
+      } catch (headError) {
+        console.log(`⚠️ HEAD request failed, proceeding without range: ${headError.message}`);
+      }
+    }
+    
+    // Stream with range support
     const audioResponse = await axios({
       method: 'GET',
       url: originalUrl,
       responseType: 'stream',
       timeout: 30000,
       maxRedirects: 2,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
-        'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
-      }
+      headers: headers
     });
     
-    console.log(`✅ Stream started: ${audioResponse.headers['content-type']}`);
+    console.log(`✅ Stream started: ${audioResponse.headers['content-type']} ${audioResponse.status === 206 ? '(partial content)' : ''}`);
     
     // Set headers for streaming
     res.setHeader('Content-Type', audioResponse.headers['content-type'] || 'audio/mpeg');
@@ -1379,7 +1412,12 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
       res.setHeader('Content-Length', audioResponse.headers['content-length']);
     }
     
-    // Stream the full episode
+    if (audioResponse.headers['content-range']) {
+      res.setHeader('Content-Range', audioResponse.headers['content-range']);
+      res.status(206); // Partial content
+    }
+    
+    // Stream the episode (full or partial)
     audioResponse.data.pipe(res);
     
   } catch (error) {
@@ -1682,15 +1720,14 @@ app.all('/webhook/play-episode', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Enhanced Playback Controls with Skip Forward/Back
+// Enhanced Playback Controls for Episode Navigation
 app.post('/webhook/playback-control', async (req, res) => {
   const digits = req.body.Digits;
   const channel = req.query.channel;
   const episodeIndex = parseInt(req.query.episodeIndex) || 0;
-  const position = parseInt(req.query.position) || 0;
   
   console.log(`=== PLAYBACK CONTROL: ${digits} ===`);
-  console.log(`Current: Channel ${channel}, Episode ${episodeIndex}, Position ${position}s`);
+  console.log(`Current: Channel ${channel}, Episode ${episodeIndex}`);
   
   const twiml = new VoiceResponse();
   
@@ -1734,7 +1771,7 @@ app.post('/webhook/playback-control', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Play episode at specific position (for skip forward/back)
+// Play episode at specific position using byte-range requests
 app.all('/webhook/play-episode-at-position', async (req, res) => {
   const channel = req.query.channel || req.body.channel;
   const episodeIndex = parseInt(req.query.episodeIndex || req.body.episodeIndex) || 0;
@@ -1771,7 +1808,7 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
     // Clean the URL
     const cleanedUrl = cleanAudioUrl(episode.audioUrl);
     const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?start=${position}`;
     
     // Announce position if not at start
     if (position > 0) {
@@ -1845,19 +1882,19 @@ app.all('/webhook/episode-finished', async (req, res) => {
       
       twiml.say(VOICE_CONFIG, `Next episode: ${nextEpisode.title.substring(0, 80)}`);
       
-      // Set up gather for next episode with position tracking
+      // Set up gather for next episode
       const gather = twiml.gather({
         numDigits: 1,
         timeout: 30,
-        action: `/webhook/playback-control?channel=${channel}&episodeIndex=${nextEpisodeIndex}&position=0`,
+        action: `/webhook/playback-control?channel=${channel}&episodeIndex=${nextEpisodeIndex}`,
         method: 'POST'
       });
       
       gather.play({ loop: 1 }, playUrl);
-      gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, or 0 for menu.');
+      gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to restart episode, 6 to skip episode, or 0 for menu.');
       
-      // Fallback to continue next episode with position tracking
-      twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${nextEpisodeIndex}&position=30`);
+      // Fallback to continue next episode
+      twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${nextEpisodeIndex}`);
       
     } else {
       // No more episodes, loop back to first episode
