@@ -235,7 +235,8 @@ function cleanAudioUrl(url) {
             /^https?:\/\/[^\/]*chartable\.com\/[^\/]+\//i,
             /^https?:\/\/[^\/]*pdst\.fm\/e\//i,
             /^https?:\/\/[^\/]*chtbl\.com\/track\/[^\/]+\//i,
-            /^https?:\/\/[^\/]*chrt\.fm\/track\/[^\/]+\//i
+            /^https?:\/\/[^\/]*chrt\.fm\/track\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*prefix\.up\.audio\/s\//i
         ];
         
         // Iteratively remove tracking layers
