@@ -1356,12 +1356,19 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     
     console.log(`🔄 Proxying audio request for: ${originalUrl.substring(0, 100)}...`);
     
+    // Determine timeout based on URL type - Libsyn needs much longer
+    const isLibsyn = originalUrl.includes('libsyn.com');
+    const headTimeout = isLibsyn ? 60000 : 20000; // 60s for Libsyn, 20s for others
+    const maxRedirects = isLibsyn ? 15 : 10; // More redirects for Libsyn
+    
+    console.log(`🕐 Using ${headTimeout/1000}s timeout for ${isLibsyn ? 'Libsyn' : 'standard'} URL`);
+    
     // Follow redirects to get the final audio URL
     const response = await axios({
       method: 'HEAD',
       url: originalUrl,
-      maxRedirects: 10,
-      timeout: 20000, // Increase timeout for slow Libsyn redirects
+      maxRedirects: maxRedirects,
+      timeout: headTimeout,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
         'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
@@ -1371,12 +1378,15 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     const finalUrl = response.request.res.responseUrl || originalUrl;
     console.log(`✅ Resolved to: ${finalUrl.substring(0, 100)}...`);
     
-    // Stream the audio content
+    // Stream the audio content with appropriate timeout
+    const streamTimeout = isLibsyn ? 90000 : 45000; // 90s for Libsyn, 45s for others
+    console.log(`🎵 Streaming with ${streamTimeout/1000}s timeout`);
+    
     const audioResponse = await axios({
       method: 'GET',
       url: finalUrl,
       responseType: 'stream',
-      timeout: 45000, // Longer timeout for slow audio streams
+      timeout: streamTimeout,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
         'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
@@ -1397,7 +1407,41 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     audioResponse.data.pipe(res);
     
   } catch (error) {
-    console.error(`❌ Audio proxy error:`, error.message);
+    console.error(`❌ Audio proxy error for ${originalUrl.substring(0, 60)}:`, error.message);
+    
+    // For Libsyn timeout errors, try a fallback approach
+    if (originalUrl.includes('libsyn.com') && error.code === 'ECONNABORTED') {
+      console.log(`🔄 Attempting Libsyn fallback for timeout...`);
+      try {
+        // Try direct streaming without HEAD request for known good Libsyn URLs
+        const directResponse = await axios({
+          method: 'GET',
+          url: originalUrl,
+          responseType: 'stream',
+          timeout: 120000, // 2 minutes for fallback
+          maxRedirects: 15,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
+            'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
+          }
+        });
+        
+        console.log(`✅ Libsyn fallback successful`);
+        res.setHeader('Content-Type', directResponse.headers['content-type'] || 'audio/mpeg');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        
+        if (directResponse.headers['content-length']) {
+          res.setHeader('Content-Length', directResponse.headers['content-length']);
+        }
+        
+        directResponse.data.pipe(res);
+        return;
+      } catch (fallbackError) {
+        console.error(`❌ Libsyn fallback also failed:`, fallbackError.message);
+      }
+    }
+    
     res.status(404).send('Audio not available');
   }
 });
