@@ -947,8 +947,10 @@ app.all('/webhook/ivr-main', (req, res) => {
   
   // Initialize analytics and ad system for this call
   if (callSid && caller) {
+    console.log(`📊 Initializing session: ${callSid} for ${caller}`);
     analytics.startSession(callSid, caller);
-    adSystem.initSession(callSid, caller);
+    const adEnabled = adSystem.initSession(callSid, caller);
+    console.log(`📺 Ad system initialized: ${adEnabled ? 'enabled' : 'exempt'} for ${caller}`);
   }
   
   const twiml = new VoiceResponse();
@@ -964,17 +966,7 @@ app.all('/webhook/ivr-main', (req, res) => {
   gather.say(VOICE_CONFIG, menuText);
   
   twiml.say(VOICE_CONFIG, getPrompt('mainMenu', 'noResponse'));
-  
-  // Track call end
   twiml.hangup();
-  
-  // Add status callback to track call completion
-  if (callSid) {
-    setTimeout(() => {
-      analytics.endSession(callSid, 'no_response');
-      adSystem.endSession(callSid);
-    }, 1000);
-  }
   
   res.type('text/xml');
   res.send(twiml.toString());
@@ -1074,14 +1066,32 @@ app.post('/webhook/select-channel', async (req, res) => {
     // Check for preroll ad
     let prerollAd = null;
     if (callSid) {
+      console.log(`🔍 Checking for preroll ad for channel ${digits}`);
       prerollAd = await adSystem.getPrerollAd(callSid, digits, selectedPodcast.name);
+      console.log(`📺 Preroll ad result: ${prerollAd ? prerollAd.name : 'none'}`);
     }
     
     // Play preroll ad if available
     if (prerollAd) {
       console.log(`📺 Playing preroll ad: ${prerollAd.name}`);
       twiml.say(VOICE_CONFIG, 'A message from our sponsor.');
-      twiml.play(prerollAd.audioUrl);
+      
+      // Handle different ad URL formats
+      if (prerollAd.audioUrl.startsWith('/api/test-ad/')) {
+        // Internal TTS ad - get the message and say it directly
+        const adId = prerollAd.audioUrl.split('/').pop();
+        const adMessages = {
+          'preroll1': 'This episode is brought to you by Local Business. Your neighborhood partner for quality service and friendly support. Visit us today.',
+          'preroll2': 'Tech Company presents this podcast. Innovation that works for you. Technology made simple.',
+          'midroll1': 'Hungry? Restaurant Chain has fresh ingredients and great taste. Over 50 locations to serve you.',
+          'midroll2': 'Protect what matters most with Insurance Company. Reliable coverage, competitive rates, local agents.'
+        };
+        const adMessage = adMessages[adId] || 'Thank you for listening to our sponsors.';
+        twiml.say(VOICE_CONFIG, adMessage);
+      } else {
+        // External audio URL - play directly
+        twiml.play(prerollAd.audioUrl);
+      }
       
       // Track ad in analytics
       if (callSid) {
@@ -2051,5 +2061,77 @@ app.get('/api/feedback/download/:callSid', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Test endpoint for ad system
+app.get('/api/test-ads/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    const testCallSid = 'test_' + Date.now();
+    
+    // Initialize test session
+    analytics.startSession(testCallSid, phoneNumber);
+    const adEnabled = adSystem.initSession(testCallSid, phoneNumber);
+    
+    // Try to get a preroll ad
+    const prerollAd = await adSystem.getPrerollAd(testCallSid, '2', 'NPR News Now');
+    
+    // Clean up test session
+    analytics.endSession(testCallSid, 'test_completed');
+    adSystem.endSession(testCallSid);
+    
+    res.json({
+      phoneNumber,
+      adSystemEnabled: adEnabled,
+      prerollAdServed: !!prerollAd,
+      prerollAd: prerollAd || null,
+      message: prerollAd ? `Ad would be served: ${prerollAd.name}` : 'No ad would be served'
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test ad endpoints for TTS-generated ads
+app.get('/api/test-ad/:adId', (req, res) => {
+  const { adId } = req.params;
+  
+  const adMessages = {
+    'preroll1': 'This episode is brought to you by Local Business. Your neighborhood partner for quality service and friendly support. Visit us today.',
+    'preroll2': 'Tech Company presents this podcast. Innovation that works for you. Technology made simple.',
+    'midroll1': 'Hungry? Restaurant Chain has fresh ingredients and great taste. Over 50 locations to serve you.',
+    'midroll2': 'Protect what matters most with Insurance Company. Reliable coverage, competitive rates, local agents.'
+  };
+  
+  const message = adMessages[adId] || 'Thank you for listening to our sponsors.';
+  
+  const twiml = new VoiceResponse();
+  twiml.say(VOICE_CONFIG, message);
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Call status webhook to track call completion
+app.post('/webhook/call-status', async (req, res) => {
+  const callSid = req.body.CallSid;
+  const callStatus = req.body.CallStatus;
+  const callDuration = parseInt(req.body.CallDuration) || 0;
+  
+  console.log(`📞 Call status update: ${callSid} - ${callStatus} (${callDuration}s)`);
+  
+  // End analytics and ad sessions when call completes
+  if (callStatus === 'completed' || callStatus === 'failed' || callStatus === 'canceled') {
+    try {
+      analytics.endSession(callSid, callStatus);
+      adSystem.endSession(callSid);
+      console.log(`📊 Session ended for ${callSid}: ${callStatus}`);
+    } catch (error) {
+      console.error(`❌ Error ending session ${callSid}:`, error.message);
+    }
+  }
+  
+  res.status(200).send('OK');
 });
 

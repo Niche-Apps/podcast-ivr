@@ -16,8 +16,8 @@
       "prerollEnabled": true,
       "midrollEnabled": true,
       "frequency": {
-        "preroll": 30,
-        "midroll": 15
+        "preroll": 80,
+        "midroll": 50
       }
     }
   },
@@ -26,7 +26,7 @@
       {
         "id": "custom_preroll_1",
         "name": "Local Business Sponsor",
-        "audioUrl": "https://your-domain.com/ads/preroll-local-business.mp3",
+        "audioUrl": "/api/test-ad/preroll1",
         "duration": 30,
         "sponsor": "Local Business",
         "revenue": 2.50,
@@ -36,7 +36,7 @@
       {
         "id": "custom_preroll_2", 
         "name": "Tech Company Sponsor",
-        "audioUrl": "https://your-domain.com/ads/preroll-tech-company.mp3",
+        "audioUrl": "/api/test-ad/preroll2",
         "duration": 15,
         "sponsor": "Tech Company",
         "revenue": 1.75,
@@ -48,7 +48,7 @@
       {
         "id": "custom_midroll_1",
         "name": "Restaurant Chain",
-        "audioUrl": "https://your-domain.com/ads/midroll-restaurant.mp3", 
+        "audioUrl": "/api/test-ad/midroll1", 
         "duration": 20,
         "sponsor": "Restaurant Chain",
         "revenue": 1.25,
@@ -58,7 +58,7 @@
       {
         "id": "custom_midroll_2",
         "name": "Insurance Company",
-        "audioUrl": "https://your-domain.com/ads/midroll-insurance.mp3",
+        "audioUrl": "/api/test-ad/midroll2",
         "duration": 25,
         "sponsor": "Insurance Company", 
         "revenue": 2.00,

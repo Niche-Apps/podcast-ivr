@@ -1,0 +1,83 @@
+{
+  "calls": [
+    {
+      "callSid": "test_1749445162512",
+      "callerNumber": "5551234567",
+      "startTime": "2025-06-09T04:59:22.512Z",
+      "endTime": "2025-06-09T04:59:22.513Z",
+      "totalDuration": 0.001,
+      "totalListeningTime": 0,
+      "channelsVisited": 0,
+      "channels": [],
+      "adsPlayed": [],
+      "totalAdsPlayed": 0,
+      "sessionRevenue": 0,
+      "location": "Area Code 555",
+      "endReason": "test_completed",
+      "feedback": null
+    },
+    {
+      "callSid": "test_1749445244334",
+      "callerNumber": "9183887174",
+      "startTime": "2025-06-09T05:00:44.334Z",
+      "endTime": "2025-06-09T05:00:44.335Z",
+      "totalDuration": 0.001,
+      "totalListeningTime": 0,
+      "channelsVisited": 0,
+      "channels": [],
+      "adsPlayed": [],
+      "totalAdsPlayed": 0,
+      "sessionRevenue": 0,
+      "location": "Tulsa, OK",
+      "endReason": "test_completed",
+      "feedback": null
+    }
+  ],
+  "dailyStats": {
+    "2025-06-09": {
+      "totalCalls": 2,
+      "uniqueCallers": [
+        "9183887174"
+      ],
+      "totalListeningTime": 0,
+      "totalRevenue": 0,
+      "channelStats": {},
+      "adStats": {},
+      "peakHour": null,
+      "hourlyStats": {
+        "0": 1,
+        "23": 1
+      }
+    }
+  },
+  "callerProfiles": {
+    "5551234567": {
+      "firstCall": "2025-06-09T04:59:22.512Z",
+      "totalCalls": 1,
+      "totalListeningTime": 0,
+      "favoriteChannels": {},
+      "totalAdRevenue": 0,
+      "averageSessionDuration": 0,
+      "location": "Area Code 555",
+      "feedbackCount": 0,
+      "lastCall": "2025-06-09T04:59:22.513Z"
+    },
+    "9183887174": {
+      "firstCall": "2025-06-09T05:00:44.334Z",
+      "totalCalls": 1,
+      "totalListeningTime": 0,
+      "favoriteChannels": {},
+      "totalAdRevenue": 0,
+      "averageSessionDuration": 0,
+      "location": "Tulsa, OK",
+      "feedbackCount": 0,
+      "lastCall": "2025-06-09T05:00:44.335Z"
+    }
+  },
+  "metadata": {
+    "totalCalls": 2,
+    "totalListeningTime": 0,
+    "totalAdRevenue": 0,
+    "lastUpdated": "2025-06-09T05:00:44.335Z"
+  }
+}

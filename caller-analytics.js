@@ -239,7 +239,7 @@ class CallerAnalytics {
     if (!this.data.dailyStats[date]) {
       this.data.dailyStats[date] = {
         totalCalls: 0,
-        uniqueCallers: new Set(),
+        uniqueCallers: [],
         totalListeningTime: 0,
         totalRevenue: 0,
         channelStats: {},
@@ -251,7 +251,14 @@ class CallerAnalytics {
 
     const dayStats = this.data.dailyStats[date];
     dayStats.totalCalls++;
-    dayStats.uniqueCallers.add(callRecord.callerNumber);
+    
+    // Handle uniqueCallers as array
+    if (!Array.isArray(dayStats.uniqueCallers)) {
+      dayStats.uniqueCallers = [];
+    }
+    if (!dayStats.uniqueCallers.includes(callRecord.callerNumber)) {
+      dayStats.uniqueCallers.push(callRecord.callerNumber);
+    }
     dayStats.totalListeningTime += callRecord.totalListeningTime;
     dayStats.totalRevenue += callRecord.sessionRevenue;
 
@@ -275,8 +282,8 @@ class CallerAnalytics {
       dayStats.channelStats[channel.channelId].totalTime += channel.listeningTime;
     });
 
-    // Convert Set to number for JSON serialization
-    dayStats.uniqueCallers = dayStats.uniqueCallers.size;
+    // Keep uniqueCallers as array length for JSON serialization in getSummary()
+    // No need to convert here since we're using array
   }
 
   saveAnalytics() {
@@ -325,6 +332,7 @@ class CallerAnalytics {
       totalListeningTime: Math.round(this.data.metadata.totalListeningTime),
       totalRevenue: this.data.metadata.totalAdRevenue.toFixed(2),
       todayCalls: todayStats.totalCalls || 0,
+      todayUniqueCallers: Array.isArray(todayStats.uniqueCallers) ? todayStats.uniqueCallers.length : (todayStats.uniqueCallers || 0),
       todayRevenue: (todayStats.totalRevenue || 0).toFixed(2),
       uniqueCallers: Object.keys(this.data.callerProfiles).length
     };
