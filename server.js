@@ -212,7 +212,7 @@ async function getWeatherForecast(zipcode) {
     }
 }
 
-// Basic URL cleaning function
+// Enhanced URL cleaning function to handle complex redirect chains
 function cleanAudioUrl(url) {
     if (!url || typeof url !== 'string') return url;
     
@@ -221,8 +221,13 @@ function cleanAudioUrl(url) {
     try {
         let cleaned = url;
         
-        // Remove common tracking redirects - more comprehensive patterns
+        // Enhanced tracking patterns with complex redirect chains
         const trackingPatterns = [
+            // Multi-layer redirects (common in TimCast URLs)
+            /^https?:\/\/dts\.podtrac\.com\/redirect\.mp3\/mgln\.ai\/e\/[^\/]+\//i,
+            /^https?:\/\/mgln\.ai\/e\/[^\/]+\/traffic\.libsyn\.com\//i,
+            
+            // Single layer redirects
             /^https?:\/\/[^\/]*claritaspod\.com\/measure\//i,
             /^https?:\/\/[^\/]*arttrk\.com\/p\/[^\/]+\//i,
             /^https?:\/\/[^\/]*verifi\.podscribe\.com\/rss\/p\//i,
@@ -236,12 +241,18 @@ function cleanAudioUrl(url) {
             /^https?:\/\/[^\/]*pdst\.fm\/e\//i,
             /^https?:\/\/[^\/]*chtbl\.com\/track\/[^\/]+\//i,
             /^https?:\/\/[^\/]*chrt\.fm\/track\/[^\/]+\//i,
-            /^https?:\/\/[^\/]*prefix\.up\.audio\/s\//i
+            /^https?:\/\/[^\/]*prefix\.up\.audio\/s\//i,
+            
+            // Additional patterns for future-proofing
+            /^https?:\/\/[^\/]*tracking\.feedpress\.it\/\?/i,
+            /^https?:\/\/[^\/]*feeds\.feedburner\.com\/~r\/[^\/]+\/~3\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*redirect\.audio\/\?/i,
+            /^https?:\/\/[^\/]*analytics\.podcast\.com\/\?/i
         ];
         
-        // Iteratively remove tracking layers
+        // Iteratively remove tracking layers with enhanced logic
         let previousUrl;
-        let maxIterations = 10;
+        let maxIterations = 15; // Increased for complex chains
         let iteration = 0;
         
         do {
@@ -251,17 +262,51 @@ function cleanAudioUrl(url) {
             for (const pattern of trackingPatterns) {
                 if (pattern.test(cleaned)) {
                     let newUrl = cleaned.replace(pattern, '');
+                    
+                    // Handle cases where the remaining URL needs protocol
                     if (!newUrl.startsWith('http') && newUrl.includes('.')) {
-                        newUrl = 'https://' + newUrl;
+                        // Check if it looks like a domain
+                        if (newUrl.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}/)) {
+                            newUrl = 'https://' + newUrl;
+                        }
                     }
-                    if (newUrl !== cleaned && newUrl.length > 10) {
-                        console.log(`🗑️ Iteration ${iteration}: Removed tracking layer`);
+                    
+                    // Validate the cleaned URL
+                    if (newUrl !== cleaned && newUrl.length > 10 && newUrl.includes('.')) {
+                        console.log(`🗑️ Iteration ${iteration}: Removed tracking layer -> ${newUrl.substring(0, 60)}...`);
                         cleaned = newUrl;
                         break; // Process one layer at a time
                     }
                 }
             }
+            
+            // Additional manual cleaning for complex cases
+            if (cleaned === previousUrl && iteration === 1) {
+                // Handle specific patterns that need manual extraction
+                const manualPatterns = [
+                    // Extract final URL from complex redirect chains
+                    /traffic\.libsyn\.com\/secure\/[^?]+/i,
+                    /content\.libsyn\.com\/[^?]+/i,
+                    /[a-zA-Z0-9-]+\.simplecastaudio\.com\/[^?]+/i,
+                    /traffic\.megaphone\.fm\/[^?]+/i
+                ];
+                
+                for (const pattern of manualPatterns) {
+                    const match = cleaned.match(pattern);
+                    if (match) {
+                        cleaned = 'https://' + match[0];
+                        console.log(`🔧 Manual extraction: ${cleaned.substring(0, 60)}...`);
+                        break;
+                    }
+                }
+            }
+            
         } while (cleaned !== previousUrl && iteration < maxIterations);
+        
+        // Final validation and cleanup
+        if (cleaned !== url) {
+            console.log(`✅ URL cleaned successfully: ${cleaned.substring(0, 80)}...`);
+        }
         
         return cleaned;
         

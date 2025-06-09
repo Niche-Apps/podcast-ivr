@@ -73,15 +73,20 @@ async function fetchPodcastEpisodes(rssUrl) {
     }
 }
 
-// URL cleaning function (from server.js)
+// Enhanced URL cleaning function to handle complex redirect chains
 function cleanAudioUrl(url) {
     if (!url || typeof url !== 'string') return url;
     
     try {
         let cleaned = url;
         
-        // Remove common tracking redirects
+        // Enhanced tracking patterns with complex redirect chains
         const trackingPatterns = [
+            // Multi-layer redirects (common in TimCast URLs)
+            /^https?:\/\/dts\.podtrac\.com\/redirect\.mp3\/mgln\.ai\/e\/[^\/]+\//i,
+            /^https?:\/\/mgln\.ai\/e\/[^\/]+\/traffic\.libsyn\.com\//i,
+            
+            // Single layer redirects
             /^https?:\/\/[^\/]*claritaspod\.com\/measure\//i,
             /^https?:\/\/[^\/]*arttrk\.com\/p\/[^\/]+\//i,
             /^https?:\/\/[^\/]*verifi\.podscribe\.com\/rss\/p\//i,
@@ -94,12 +99,19 @@ function cleanAudioUrl(url) {
             /^https?:\/\/[^\/]*chartable\.com\/[^\/]+\//i,
             /^https?:\/\/[^\/]*pdst\.fm\/e\//i,
             /^https?:\/\/[^\/]*chtbl\.com\/track\/[^\/]+\//i,
-            /^https?:\/\/[^\/]*chrt\.fm\/track\/[^\/]+\//i
+            /^https?:\/\/[^\/]*chrt\.fm\/track\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*prefix\.up\.audio\/s\//i,
+            
+            // Additional patterns for future-proofing
+            /^https?:\/\/[^\/]*tracking\.feedpress\.it\/\?/i,
+            /^https?:\/\/[^\/]*feeds\.feedburner\.com\/~r\/[^\/]+\/~3\/[^\/]+\//i,
+            /^https?:\/\/[^\/]*redirect\.audio\/\?/i,
+            /^https?:\/\/[^\/]*analytics\.podcast\.com\/\?/i
         ];
         
-        // Iteratively remove tracking layers
+        // Iteratively remove tracking layers with enhanced logic
         let previousUrl;
-        let maxIterations = 10;
+        let maxIterations = 15; // Increased for complex chains
         let iteration = 0;
         
         do {
@@ -109,15 +121,43 @@ function cleanAudioUrl(url) {
             for (const pattern of trackingPatterns) {
                 if (pattern.test(cleaned)) {
                     let newUrl = cleaned.replace(pattern, '');
+                    
+                    // Handle cases where the remaining URL needs protocol
                     if (!newUrl.startsWith('http') && newUrl.includes('.')) {
-                        newUrl = 'https://' + newUrl;
+                        // Check if it looks like a domain
+                        if (newUrl.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}/)) {
+                            newUrl = 'https://' + newUrl;
+                        }
                     }
-                    if (newUrl !== cleaned && newUrl.length > 10) {
+                    
+                    // Validate the cleaned URL
+                    if (newUrl !== cleaned && newUrl.length > 10 && newUrl.includes('.')) {
                         cleaned = newUrl;
+                        break; // Process one layer at a time
+                    }
+                }
+            }
+            
+            // Additional manual cleaning for complex cases
+            if (cleaned === previousUrl && iteration === 1) {
+                // Handle specific patterns that need manual extraction
+                const manualPatterns = [
+                    // Extract final URL from complex redirect chains
+                    /traffic\.libsyn\.com\/secure\/[^?]+/i,
+                    /content\.libsyn\.com\/[^?]+/i,
+                    /[a-zA-Z0-9-]+\.simplecastaudio\.com\/[^?]+/i,
+                    /traffic\.megaphone\.fm\/[^?]+/i
+                ];
+                
+                for (const pattern of manualPatterns) {
+                    const match = cleaned.match(pattern);
+                    if (match) {
+                        cleaned = 'https://' + match[0];
                         break;
                     }
                 }
             }
+            
         } while (cleaned !== previousUrl && iteration < maxIterations);
         
         return cleaned;
@@ -134,8 +174,8 @@ async function testUrlAccess(url) {
         const response = await axios({
             method: 'HEAD',
             url: url,
-            timeout: 10000,
-            maxRedirects: 10,
+            timeout: 25000, // Increased timeout for slow Libsyn redirects
+            maxRedirects: 15, // Increased for complex redirect chains
             headers: {
                 'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
                 'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
