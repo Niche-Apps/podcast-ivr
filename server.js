@@ -317,6 +317,49 @@ try {
   console.log('⚠️ Using fallback voice prompts');
 }
 
+// Helper function to clean episode titles for voice synthesis
+function cleanTitleForVoice(title) {
+  if (!title || typeof title !== 'string') return title;
+  
+  try {
+    let cleaned = title;
+    
+    // Fix common date formats for British voice
+    // Convert MM-DD-YYYY to "Month DD, YYYY" format
+    cleaned = cleaned.replace(/(\d{1,2})-(\d{1,2})-(\d{4})/g, (match, month, day, year) => {
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                         'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthIndex = parseInt(month) - 1;
+      if (monthIndex >= 0 && monthIndex < 12) {
+        return `${monthNames[monthIndex]} ${parseInt(day)}, ${year}`;
+      }
+      return match;
+    });
+    
+    // Convert MM/DD/YYYY to "Month DD, YYYY" format  
+    cleaned = cleaned.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g, (match, month, day, year) => {
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                         'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthIndex = parseInt(month) - 1;
+      if (monthIndex >= 0 && monthIndex < 12) {
+        return `${monthNames[monthIndex]} ${parseInt(day)}, ${year}`;
+      }
+      return match;
+    });
+    
+    // Clean up common problematic characters
+    cleaned = cleaned.replace(/&amp;/g, 'and');
+    cleaned = cleaned.replace(/&/g, 'and');
+    cleaned = cleaned.replace(/vs\./gi, 'versus');
+    cleaned = cleaned.replace(/\b(w\/)\b/gi, 'with');
+    
+    return cleaned;
+  } catch (error) {
+    console.error(`⚠️ Title cleaning error:`, error.message);
+    return title;
+  }
+}
+
 // Helper function to get prompt with variable replacement
 function getPrompt(category, key, variables = {}) {
   try {
@@ -329,7 +372,14 @@ function getPrompt(category, key, variables = {}) {
     // Replace variables in the prompt
     Object.keys(variables).forEach(varName => {
       const placeholder = `{${varName}}`;
-      prompt = prompt.replace(new RegExp(placeholder, 'g'), variables[varName]);
+      let value = variables[varName];
+      
+      // Clean episode titles for better voice synthesis
+      if (varName === 'episodeTitle') {
+        value = cleanTitleForVoice(value);
+      }
+      
+      prompt = prompt.replace(new RegExp(placeholder, 'g'), value);
     });
     
     return prompt;
@@ -1267,7 +1317,7 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
       method: 'HEAD',
       url: originalUrl,
       maxRedirects: 10,
-      timeout: 15000, // Increase timeout for slow Libsyn redirects
+      timeout: 20000, // Increase timeout for slow Libsyn redirects
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
         'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
@@ -1282,7 +1332,7 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
       method: 'GET',
       url: finalUrl,
       responseType: 'stream',
-      timeout: 30000,
+      timeout: 45000, // Longer timeout for slow audio streams
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
         'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
