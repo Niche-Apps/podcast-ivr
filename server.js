@@ -1356,17 +1356,17 @@ app.get('/api/feeds/list', (req, res) => {
 });
 
 // Audio proxy endpoint with byte-range support for seeking
-app.get('/proxy-audio/:encodedUrl', async (req, res) => {
+app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
   try {
-    let { encodedUrl } = req.params;
-    const startTime = parseInt(req.query.start) || 0;
+    let { encodedUrl, type, startTime } = req.params;
+    const seekTime = type === 'start' ? parseInt(startTime) || 0 : parseInt(req.query.start) || 0;
     
     // Remove any query parameters from the encoded URL path
     encodedUrl = encodedUrl.split('?')[0];
     
     const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     
-    console.log(`🎵 Streaming: ${originalUrl.substring(0, 100)}... ${startTime > 0 ? `(seeking to ${startTime}s)` : ''}`);
+    console.log(`🎵 Streaming: ${originalUrl.substring(0, 100)}... ${seekTime > 0 ? `(seeking to ${seekTime}s)` : ''}`);
     
     // First, get content-length to calculate byte offset
     let headers = {
@@ -1375,7 +1375,7 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     };
     
     // If seeking is requested, try to calculate byte offset
-    if (startTime > 0) {
+    if (seekTime > 0) {
       try {
         // Get file info first with shorter timeout
         const headResponse = await axios({
@@ -1401,7 +1401,7 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
             estimatedByteRate = 16000; // ~128kbps = 16KB/s
           }
           
-          const byteOffset = Math.min(startTime * estimatedByteRate, Math.max(0, contentLength - 2000000)); // Leave 2MB buffer
+          const byteOffset = Math.min(seekTime * estimatedByteRate, Math.max(0, contentLength - 2000000)); // Leave 2MB buffer
           
           if (byteOffset > 1000) { // Only use range if seeking more than 1KB
             headers['Range'] = `bytes=${byteOffset}-`;
@@ -1876,7 +1876,7 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
     // Clean the URL and start pre-loading
     const cleanedUrl = cleanAudioUrl(episode.audioUrl);
     const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?start=${position}`;
+    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}`;
     
     // Pre-load check while announcing position for faster seeking
     const preloadPromise = axios.head(cleanedUrl, {
