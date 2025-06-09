@@ -1440,6 +1440,11 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
     
     console.log(`✅ Stream started: ${audioResponse.status} ${audioResponse.headers['content-type']} ${audioResponse.status === 206 ? '(partial content)' : ''}`);
     
+    // Check if seeking was requested but CDN didn't support it
+    if (seekTime > 0 && audioResponse.status === 200) {
+      console.log(`⚠️ Range request ignored by CDN, got full content instead of partial`);
+    }
+    
     // Set headers for streaming
     res.setHeader('Content-Type', audioResponse.headers['content-type'] || 'audio/mpeg');
     res.setHeader('Accept-Ranges', 'bytes');
@@ -1454,18 +1459,39 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
       res.status(206); // Partial content
     }
     
+    // Handle potential issues with stream piping
+    audioResponse.data.on('error', (streamError) => {
+      console.error(`❌ Stream error:`, streamError.message);
+      if (!res.headersSent) {
+        res.status(500).send('Stream error');
+      }
+    });
+    
+    res.on('close', () => {
+      console.log(`🔌 Client disconnected from stream`);
+    });
+    
     // Stream the episode (full or partial)
     audioResponse.data.pipe(res);
     
   } catch (error) {
     console.error(`❌ Streaming failed:`, error.message);
+    console.error(`Error details:`, {
+      code: error.code,
+      status: error.response?.status,
+      url: originalUrl.substring(0, 100) + '...',
+      seekTime,
+      hasRange: !!headers['Range']
+    });
     
     // Provide more specific error responses
     if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
       console.error(`🔗 Connection failed to: ${originalUrl.substring(0, 100)}...`);
-      res.status(503).send('Audio source temporarily unavailable');
-    } else if (error.response && error.response.status === 416) {
-      console.error(`📍 Range request failed, trying without range`);
+      if (!res.headersSent) {
+        res.status(503).send('Audio source temporarily unavailable');
+      }
+    } else if (error.response && (error.response.status === 416 || error.response.status === 400)) {
+      console.error(`📍 Range request failed (${error.response.status}), trying without range`);
       // If range request fails, retry without range header
       try {
         const fallbackResponse = await axios({
@@ -1480,16 +1506,27 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
           }
         });
         
-        res.setHeader('Content-Type', fallbackResponse.headers['content-type'] || 'audio/mpeg');
-        fallbackResponse.data.pipe(res);
-        console.log(`✅ Fallback stream started without range`);
+        if (!res.headersSent) {
+          res.setHeader('Content-Type', fallbackResponse.headers['content-type'] || 'audio/mpeg');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          fallbackResponse.data.pipe(res);
+          console.log(`✅ Fallback stream started without range`);
+        }
         return;
       } catch (fallbackError) {
         console.error(`❌ Fallback also failed:`, fallbackError.message);
       }
+    } else if (error.response && error.response.status >= 500) {
+      console.error(`🔥 Server error from CDN: ${error.response.status}`);
+      if (!res.headersSent) {
+        res.status(502).send('Audio server error');
+      }
     }
     
-    res.status(404).send('Audio not available');
+    if (!res.headersSent) {
+      res.status(404).send('Audio not available');
+    }
   }
 });
 
