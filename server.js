@@ -10,8 +10,7 @@ const VOICE_CONFIG = {
 };
 
 // Constants
-const CHUNK_DURATION = 360;
-const SKIP_DURATION = 120;
+const SKIP_DURATION = 120; // 2 minutes for skip forward/back
 const fs = require('fs');
 const path = require('path');
 
@@ -1225,25 +1224,25 @@ app.post('/webhook/select-channel', async (req, res) => {
     // Announce and play episode
     twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'nowPlaying', {episodeTitle: episode.title.substring(0, 120)}));
     
-    // Route ALL podcast URLs through proxy 
+    // Route ALL podcast URLs through proxy for direct streaming
     const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
     const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
-    console.log(`🚀 Using proxy for playback: ${playUrl.substring(0, 80)}...`);
+    console.log(`🚀 Using direct proxy for playback: ${playUrl.substring(0, 80)}...`);
     
-    // Set up gather for controls
+    // Set up gather for controls with position tracking
     const gather = twiml.gather({
       numDigits: 1,
-      timeout: 8,
-      action: '/webhook/ivr-main',
+      timeout: 30, // Shorter timeout for better responsiveness
+      action: `/webhook/playback-control?channel=${digits}&episodeIndex=0&position=0`,
       method: 'POST'
     });
     
     // Play the podcast
     gather.play({ loop: 1 }, playUrl);
-    gather.say(VOICE_CONFIG, getPrompt('podcasts', 'pressAnyKey'));
+    gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, or 0 for menu.');
     
-    // Fallback to main menu
-    twiml.redirect('/webhook/ivr-main');
+    // Fallback to continue current episode after timeout
+    twiml.redirect(`/webhook/playback-control?channel=${digits}&episodeIndex=0&position=0`);
     
   } catch (error) {
     console.error(`❌ Error playing ${selectedPodcast.name}:`, error.message);
@@ -1344,7 +1343,7 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
-// Audio proxy endpoint - directly stream cleaned URLs without redirect handling
+// Audio proxy endpoint - simple direct streaming
 app.get('/proxy-audio/:encodedUrl', async (req, res) => {
   try {
     let { encodedUrl } = req.params;
@@ -1354,38 +1353,37 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     
     const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     
-    console.log(`🎵 Direct streaming (no redirects): ${originalUrl.substring(0, 100)}...`);
+    console.log(`🎵 Streaming: ${originalUrl.substring(0, 100)}...`);
     
-    // Stream with minimal redirects for CDN final URLs
+    // Stream with minimal redirects for fast loading
     const audioResponse = await axios({
       method: 'GET',
       url: originalUrl,
       responseType: 'stream',
-      timeout: 30000, // Standard 30s timeout for all
-      maxRedirects: 2, // Allow 1-2 redirects for CDN final URLs only
+      timeout: 30000,
+      maxRedirects: 2,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
         'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
       }
     });
     
-    console.log(`✅ Direct stream successful: ${audioResponse.headers['content-type']}`);
+    console.log(`✅ Stream started: ${audioResponse.headers['content-type']}`);
     
-    // Set appropriate headers for audio streaming
+    // Set headers for streaming
     res.setHeader('Content-Type', audioResponse.headers['content-type'] || 'audio/mpeg');
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     
-    // Set content length if available
     if (audioResponse.headers['content-length']) {
       res.setHeader('Content-Length', audioResponse.headers['content-length']);
     }
     
-    // Stream audio directly
+    // Stream the full episode
     audioResponse.data.pipe(res);
     
   } catch (error) {
-    console.error(`❌ Direct streaming failed for ${originalUrl ? originalUrl.substring(0, 60) : 'unknown'}:`, error.message);
+    console.error(`❌ Streaming failed:`, error.message);
     res.status(404).send('Audio not available');
   }
 });
@@ -1563,10 +1561,9 @@ app.all('/webhook/play-episode', async (req, res) => {
   // Handle parameters from both GET query and POST body
   const channel = req.query.channel || req.body.channel;
   const episodeIndex = parseInt(req.query.episodeIndex || req.body.episodeIndex) || 0;
-  const position = parseInt(req.query.position || req.body.position) || 0;
   
   console.log(`=== STREAMING EPISODE PLAYBACK ===`);
-  console.log(`Channel: ${channel}, Episode: ${episodeIndex}, Position: ${position}s`);
+  console.log(`Channel: ${channel}, Episode: ${episodeIndex}`);
   
   const twiml = new VoiceResponse();
   
@@ -1610,7 +1607,7 @@ app.all('/webhook/play-episode', async (req, res) => {
     if (!episode) {
       if (episodeIndex > 0) {
         console.log(`⚠️ Episode ${episodeIndex} not found, trying latest episode`);
-        twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0&position=0`);
+        twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0`);
       } else {
         console.log(`❌ No episodes available for ${podcast.name}`);
         twiml.say(VOICE_CONFIG, 'No episodes available. Please try another podcast.');
@@ -1641,32 +1638,26 @@ app.all('/webhook/play-episode', async (req, res) => {
     }
     
     // Announce episode
-    const positionMins = Math.floor(position / 60);
-    if (position === 0) {
-      twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 80)}`);
-    } else {
-      twiml.say(VOICE_CONFIG, `Resuming at ${positionMins} minutes.`);
-    }
+    twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 80)}`);
     
-    // Set up playback controls with longer timeout
+    // Set up playback controls for continuous playback with position tracking
     const gather = twiml.gather({
       numDigits: 1,
-      action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${position}`,
+      action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=0`,
       method: 'POST',
-      timeout: 5
+      timeout: 30
     });
     
-    // Route through proxy
+    // Route through proxy for direct streaming
     const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
     const proxyUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
-    console.log(`🚀 Playing from: ${finalAudioUrl.split('/')[2]}`);
+    console.log(`🚀 Playing episode from: ${finalAudioUrl.split('/')[2]}`);
     gather.play({ loop: 1 }, proxyUrl);
     
-    twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.`);
+    twiml.say(VOICE_CONFIG, `Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, or 0 for main menu.`);
     
-    // Continue to next chunk after timeout
-    const nextPosition = position + CHUNK_DURATION;
-    twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex}&position=${nextPosition}`);
+    // Continue current episode after timeout
+    twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=0`);
     
   } catch (error) {
     console.error(`❌ Episode playback error for ${podcast.name}:`, error.message);
@@ -1680,7 +1671,7 @@ app.all('/webhook/play-episode', async (req, res) => {
     } else if (episodeIndex === 0) {
       // Try next episode automatically if this is the first episode
       console.log(`🔄 Trying next episode due to error...`);
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=1&position=0`);
+      twiml.redirect(`/webhook/episode-finished?channel=${channel}&episodeIndex=0`);
     } else {
       twiml.say(VOICE_CONFIG, `Sorry, there's a problem with this podcast right now. Please try another one.`);
       twiml.redirect('/webhook/ivr-main');
@@ -1691,8 +1682,8 @@ app.all('/webhook/play-episode', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Enhanced Playback Controls
-app.post('/webhook/playback-control', (req, res) => {
+// Enhanced Playback Controls with Skip Forward/Back
+app.post('/webhook/playback-control', async (req, res) => {
   const digits = req.body.Digits;
   const channel = req.query.channel;
   const episodeIndex = parseInt(req.query.episodeIndex) || 0;
@@ -1707,26 +1698,26 @@ app.post('/webhook/playback-control', (req, res) => {
     case '1': // Previous episode
       const prevEpisode = Math.max(0, episodeIndex - 1);
       twiml.say(VOICE_CONFIG, 'Going to previous episode.');
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${prevEpisode}&position=0`);
+      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${prevEpisode}`);
       break;
       
     case '3': // Next episode
       twiml.say(VOICE_CONFIG, 'Going to next episode.');
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex + 1}&position=0`);
+      twiml.redirect(`/webhook/episode-finished?channel=${channel}&episodeIndex=${episodeIndex}`);
       break;
       
-    case '4': // Jump back 2 minutes
+    case '4': // Skip back 2 minutes
       const backPosition = Math.max(0, position - SKIP_DURATION);
       const backMins = Math.floor(backPosition / 60);
-      twiml.say(VOICE_CONFIG, `Jumping back to ${backMins} minutes.`);
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
+      twiml.say(VOICE_CONFIG, `Skipping back to ${backMins} minutes.`);
+      twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
       break;
       
-    case '6': // Jump forward 2 minutes
+    case '6': // Skip forward 2 minutes
       const forwardPosition = position + SKIP_DURATION;
       const forwardMins = Math.floor(forwardPosition / 60);
-      twiml.say(VOICE_CONFIG, `Jumping forward to ${forwardMins} minutes.`);
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
+      twiml.say(VOICE_CONFIG, `Skipping forward to ${forwardMins} minutes.`);
+      twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
       break;
       
     case '0': // Main menu
@@ -1735,8 +1726,150 @@ app.post('/webhook/playback-control', (req, res) => {
       break;
       
     default:
-      // Continue current playback
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex}&position=${position}`);
+      // Continue to next episode (continuous playback)
+      twiml.redirect(`/webhook/episode-finished?channel=${channel}&episodeIndex=${episodeIndex}`);
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Play episode at specific position (for skip forward/back)
+app.all('/webhook/play-episode-at-position', async (req, res) => {
+  const channel = req.query.channel || req.body.channel;
+  const episodeIndex = parseInt(req.query.episodeIndex || req.body.episodeIndex) || 0;
+  const position = parseInt(req.query.position || req.body.position) || 0;
+  
+  console.log(`=== PLAYING EPISODE AT POSITION ===`);
+  console.log(`Channel: ${channel}, Episode: ${episodeIndex}, Position: ${position}s`);
+  
+  const twiml = new VoiceResponse();
+  
+  const podcast = ALL_PODCASTS[channel];
+  if (!podcast) {
+    twiml.say(VOICE_CONFIG, 'Invalid channel.');
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  try {
+    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    
+    if (!episodes || episodes.length === 0) {
+      twiml.say(VOICE_CONFIG, `No episodes available for ${podcast.name}.`);
+      twiml.redirect('/webhook/ivr-main');
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    const episode = episodes[episodeIndex];
+    if (!episode) {
+      // If episode not found, go to latest episode
+      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0`);
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // Clean the URL
+    const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+    const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+    
+    // Announce position if not at start
+    if (position > 0) {
+      const positionMins = Math.floor(position / 60);
+      twiml.say(VOICE_CONFIG, `Resuming at ${positionMins} minutes.`);
+    }
+    
+    // Set up gather with position tracking
+    const gather = twiml.gather({
+      numDigits: 1,
+      action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${position}`,
+      method: 'POST',
+      timeout: 30
+    });
+    
+    gather.play({ loop: 1 }, playUrl);
+    gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, or 0 for menu.');
+    
+    // Continue with updated position after timeout (simulate playback progress)
+    const nextPosition = position + 30; // Add 30 seconds for timeout duration
+    twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${nextPosition}`);
+    
+  } catch (error) {
+    console.error(`❌ Error playing episode at position:`, error.message);
+    twiml.say(VOICE_CONFIG, 'There was an issue with playback. Returning to main menu.');
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Handle episode finishing and automatic progression to next episode
+app.all('/webhook/episode-finished', async (req, res) => {
+  const channel = req.query.channel || req.body.channel;
+  const episodeIndex = parseInt(req.query.episodeIndex || req.body.episodeIndex) || 0;
+  const digits = req.body.Digits;
+  
+  console.log(`=== EPISODE FINISHED ===`);
+  console.log(`Channel: ${channel}, Episode: ${episodeIndex}, Input: ${digits || 'timeout'}`);
+  
+  const twiml = new VoiceResponse();
+  
+  // If user pressed 0, return to main menu
+  if (digits === '0') {
+    twiml.say(VOICE_CONFIG, 'Returning to main menu.');
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  const podcast = ALL_PODCASTS[channel];
+  if (!podcast) {
+    twiml.say(VOICE_CONFIG, 'Invalid channel.');
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  try {
+    // Fetch episodes to get the next one
+    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    const nextEpisodeIndex = episodeIndex + 1;
+    
+    if (episodes && episodes[nextEpisodeIndex]) {
+      console.log(`🔄 Auto-advancing to next episode: ${nextEpisodeIndex}`);
+      const nextEpisode = episodes[nextEpisodeIndex];
+      
+      // Clean the URL
+      const cleanedUrl = cleanAudioUrl(nextEpisode.audioUrl);
+      const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+      const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+      
+      twiml.say(VOICE_CONFIG, `Next episode: ${nextEpisode.title.substring(0, 80)}`);
+      
+      // Set up gather for next episode with position tracking
+      const gather = twiml.gather({
+        numDigits: 1,
+        timeout: 30,
+        action: `/webhook/playback-control?channel=${channel}&episodeIndex=${nextEpisodeIndex}&position=0`,
+        method: 'POST'
+      });
+      
+      gather.play({ loop: 1 }, playUrl);
+      gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, or 0 for menu.');
+      
+      // Fallback to continue next episode with position tracking
+      twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${nextEpisodeIndex}&position=30`);
+      
+    } else {
+      // No more episodes, loop back to first episode
+      console.log(`🔄 End of episodes reached, looping back to first episode`);
+      twiml.say(VOICE_CONFIG, `You've reached the end of ${podcast.name}. Restarting from the latest episode.`);
+      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0`);
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error in episode progression:`, error.message);
+    twiml.say(VOICE_CONFIG, 'There was an issue loading the next episode. Returning to main menu.');
+    twiml.redirect('/webhook/ivr-main');
   }
   
   res.type('text/xml');
