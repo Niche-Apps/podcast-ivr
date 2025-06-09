@@ -1267,7 +1267,7 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
       method: 'HEAD',
       url: originalUrl,
       maxRedirects: 10,
-      timeout: 10000,
+      timeout: 15000, // Increase timeout for slow Libsyn redirects
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
         'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
@@ -1304,8 +1304,11 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
       res.setHeader('Content-Length', audioResponse.headers['content-length']);
     }
     
+    // Skip speed adjustment for Libsyn URLs (they have issues with ffmpeg streaming)
+    const isLibsynUrl = originalUrl.includes('libsyn.com') || finalUrl.includes('libsyn.com');
+    
     // If speed adjustment is needed and ffmpeg is available
-    if (speed !== 1.0) {
+    if (speed !== 1.0 && !isLibsynUrl) {
       try {
         const { spawn } = require('child_process');
         
