@@ -61,9 +61,9 @@
       "description": "Long-form conversations"
     },
     "12": {
-      "name": "TimCast IRL",
-      "rssUrl": "https://feeds.libsyn.com/574450/rss",
-      "description": "Tim Pool commentary show"
+      "name": "Jordan Peterson",
+      "rssUrl": "https://feeds.soundcloud.com/users/soundcloud:users:84003143/sounds.rss",
+      "description": "Psychology and philosophy discussions"
     },
     "13": {
       "name": "Louder with Crowder",

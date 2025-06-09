@@ -1,0 +1,185 @@
+[
+  {
+    "channelId": "0",
+    "name": "System Test",
+    "status": "special_service",
+    "accessible": true
+  },
+  {
+    "channelId": "1",
+    "name": "Weather Forecast",
+    "status": "special_service",
+    "accessible": true
+  },
+  {
+    "channelId": "2",
+    "name": "NPR News Now",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://dcs-spotify.megaphone.fm/NPR2453041834.mp3?e=nsv2-1749445200000-s1-long&key=12ac1f5e3f228be8ffbaef901bd05250&p=500005&request_event_id=eae1e64d-c1d6-4259-87d6-98dd384171ee&session_id=eae1e64d-c1d6-4259-87d6-98dd384171ee&size=5097963&t=podcast&timetoken=1749453209_B9F33434AE0846F33327F71921235DD4"
+  },
+  {
+    "channelId": "3",
+    "name": "This American Life",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://dcs-spotify.megaphone.fm/NPR1378612687.mp3?key=05a20a0b9b7f34d3fa04576a6b1f16c0&request_event_id=0628bd49-b1cc-4959-8efe-ba97e38658f4&session_id=0628bd49-b1cc-4959-8efe-ba97e38658f4&timetoken=1749453213_0CD552698099F46160A4AAA82ACB5670"
+  },
+  {
+    "channelId": "4",
+    "name": "The Daily",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://nyt.simplecastaudio.com/03d8b493-87fc-4bd1-931f-8a8e9b945d8a/episodes/cb7dd68d-1af5-43fa-9b8a-d4f2b657b100/audio/128/default.mp3/default.mp3_ywr3ahjkcgo_c6af7ea931816c0cfc6333d6aeae37fe_37471864.mp3?aid=rss_feed&awCollectionId=03d8b493-87fc-4bd1-931f-8a8e9b945d8a&awEpisodeId=cb7dd68d-1af5-43fa-9b8a-d4f2b657b100&feed=54nAGcIl&hash_redirect=1&x-total-bytes=37471864&x-ais-classified=unclassified&listeningSessionID=0CD_382_159__36eac3073882fea13c6959dbeb0ff7b3139f4338"
+  },
+  {
+    "channelId": "5",
+    "name": "Serial",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://nyt.simplecastaudio.com/521189a6-a4f6-404d-85cf-455a989a10a4/episodes/36e9a426-dd19-40af-a4f8-13e1ee45f0e6/audio/128/default.mp3/default.mp3_ywr3ahjkcgo_a28549efe6a6dc330d2998c1d8d0dcb7_36385539.mp3?aid=rss_feed&awCollectionId=521189a6-a4f6-404d-85cf-455a989a10a4&awEpisodeId=36e9a426-dd19-40af-a4f8-13e1ee45f0e6&feed=xl36XBC2&hash_redirect=1&x-total-bytes=36385539&x-ais-classified=unclassified&listeningSessionID=0CD_382_159__1e4e5904b9aab9e1d21d687581502b93cdf68d73"
+  },
+  {
+    "channelId": "6",
+    "name": "Matt Walsh Show",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://injector.simplecastaudio.com/d1078767-cdeb-4a60-8561-25db7745b425/episodes/916e7d4a-17b2-4d96-9be1-a7d322f78ac4/audio/128/default.mp3/default.mp3_ywr3ahjkcgo_3fdec5e1c0dc6c22e6c4f94e9a2a4a9f_15332658.mp3?aid=rss_feed&awCollectionId=d1078767-cdeb-4a60-8561-25db7745b425&awEpisodeId=916e7d4a-17b2-4d96-9be1-a7d322f78ac4&feed=pp_b9xO6&hash_redirect=1&x-total-bytes=15332658&x-ais-classified=unclassified&listeningSessionID=0CD_382_159__dfc6b8a4255cf0323c0542c10ed04277921034d5"
+  },
+  {
+    "channelId": "7",
+    "name": "Ben Shapiro Show",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://injector.simplecastaudio.com/01514e65-f508-4e0c-99d9-aad07cea61ff/episodes/d2b1cb04-bd2e-488d-90fe-0145b4f2a364/audio/128/default.mp3/default.mp3_ywr3ahjkcgo_aa9feeef14608df3bf201cb085afe01a_73809489.mp3?aid=rss_feed&awCollectionId=01514e65-f508-4e0c-99d9-aad07cea61ff&awEpisodeId=d2b1cb04-bd2e-488d-90fe-0145b4f2a364&feed=C0fPpQ64&hash_redirect=1&x-total-bytes=73809489&x-ais-classified=unclassified&listeningSessionID=0CD_382_159__794e6d4fe454fa0f019c1f9e327791defe3cea92"
+  },
+  {
+    "channelId": "8",
+    "name": "Michael Knowles Show",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://injector.simplecastaudio.com/e626ec69-4c64-4e58-9a75-6b64d301dd52/episodes/ce33c0bb-2457-486b-b127-3dc804471560/audio/128/default.mp3/default.mp3_ywr3ahjkcgo_8753114cba3167e2b5a7f9509cbcbb60_13132305.mp3?aid=rss_feed&awCollectionId=e626ec69-4c64-4e58-9a75-6b64d301dd52&awEpisodeId=ce33c0bb-2457-486b-b127-3dc804471560&feed=6c2VScgo&hash_redirect=1&x-total-bytes=13132305&x-ais-classified=unclassified&listeningSessionID=0CD_382_159__6f79fad276f441b743784690d3951dcc53beea3e"
+  },
+  {
+    "channelId": "9",
+    "name": "Andrew Klavan Show",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://injector.simplecastaudio.com/24bb6613-0d48-4cdc-9acb-2bdafdc68230/episodes/da8618e9-37c7-4ef4-9be6-db04bbc9f18d/audio/128/default.mp3/default.mp3_ywr3ahjkcgo_49eae77834a4be2ed7f09449dec1d470_71811463.mp3?aid=rss_feed&awCollectionId=24bb6613-0d48-4cdc-9acb-2bdafdc68230&awEpisodeId=da8618e9-37c7-4ef4-9be6-db04bbc9f18d&feed=2Dy_5daq&hash_redirect=1&x-total-bytes=71811463&x-ais-classified=unclassified&listeningSessionID=0CD_382_159__085ab1bbcc8bad371ebb8aa47c7ed3db3498cf8d"
+  },
+  {
+    "channelId": "10",
+    "name": "Pints with Aquinas",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://content.libsyn.com/p/1/e/2/1e29c643408dfc4b/intro_-_IVF_Surrogacy_and_Embryo_Adoption.mp3?c_id=188915625&cs_id=188915625&destination_id=367137&response-content-type=audio%2Fmpeg&Expires=1749456663&Signature=cRmXxp19DLKdAdu-4KRNCy2XgW6jWyOTBRg38klt0vHGOmS-U9jhHiGwtRC5iB9wuy3NAHanvbAszpAZ2EoJxGcmmMg8x6bCO45BX9rKE31-EZoZIxI~y6Rz~JO22gnD0xMNzM4o3WMgHbxTxaSeGRTvQo~lezSX3Eu7SehYjz9r0mO0wrbQ~ysGlk9OE72DL3o4tLIbq8IBX2CZtOFfUhpBInM70j3PESyRYL2uAOPZaS01sZbJwZ13Zvljp125BZH~Lgab~IHnjo9eNKMgFMka6uPxevliH5h6wGHYtQfLDfeLXc7RwV-jMM47a1yMzTgyBCzePy~myLvFBMd1fQ__&Key-Pair-Id=K1YS7LZGUP96OI"
+  },
+  {
+    "channelId": "11",
+    "name": "Joe Rogan",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": false,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://dcs-spotify.megaphone.fm/GLT2729354205.mp3?key=3e6f7dde01e295786fb4ab8368df7f80&request_event_id=77af6570-6421-4e2d-9bd3-cfd58af79cb6&session_id=77af6570-6421-4e2d-9bd3-cfd58af79cb6&timetoken=1749453244_C28AC85D87D5C777D8475E8BEE647F9C"
+  },
+  {
+    "channelId": "12",
+    "name": "TimCast IRL",
+    "status": "broken",
+    "accessible": false,
+    "originalWorked": false,
+    "cleanedWorked": false,
+    "urlCleaned": true,
+    "originalError": "timeout of 10000ms exceeded",
+    "cleanedError": "timeout of 10000ms exceeded"
+  },
+  {
+    "channelId": "13",
+    "name": "Louder with Crowder",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://media.rss.com/louder-with-crowder/2025_06_06_16_27_44_7c41a78a-3c18-4ff3-8bf1-09e2a11974c3.mp3"
+  },
+  {
+    "channelId": "14",
+    "name": "Lex Fridman",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": false,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://content.blubrry.com/takeituneasy/lex_ai_sundar_pichai.mp3"
+  },
+  {
+    "channelId": "15",
+    "name": "Matt Walsh 2",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": false,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://d1bxy2pveef3fq.cloudfront.net/episodes/original/50553840?session_id=2d3a6e33-3e55-5dc5-b9a6-b237dfadfdf4&ab=128&al=916976&ao=208389&cc=YYYYYYYYYY&ct=DOWNLOAD&episode_id=66441219&show_id=6636540&user_id=18484265&organization_id=13466301&tenant=SPREAKER&timestamp=1749446070&ppi=c8291681-230f-53f0-ae33-be93c5348e02&epi=13e333d7-6567-5863-b5fa-28c0000f86eb&media_type=static&Expires=1749532470&Key-Pair-Id=K1J2BR3INU6RYD&Signature=BcY8Qeo-YO26K0XPXzF89NkUmHDtvihn78PCza4EKuE663~BXC0eQD-9PsUr8lxhw5px7Nws8WX1Tise3rgjtffWSJDFxGicu5qSmGlpQcha9n3wxC1qiqRerHM7JPCNFcG8gKi21w3H1SIPwuOVHXa2bcAFYNnNzQYA-t4CaoccQKhCKgVPNLTGtyR1ihvyQ7U01VNwfthRYkTbcDhT5f6x9fpljtKJ9nb89blE2GLfIxhnmSpe2-c68TWKQjVEL7a0D3yfiiaV6vajNPyzVYub1DE20wxUoYVgbr4lpMM-gY9~vbV2CAtJXhZskhD7ImrebaUUXG0q-7bzlHlsJQ__"
+  },
+  {
+    "channelId": "20",
+    "name": "Morning Wire",
+    "status": "working",
+    "accessible": true,
+    "originalWorked": true,
+    "cleanedWorked": true,
+    "urlCleaned": true,
+    "contentType": "audio/mpeg",
+    "finalUrl": "https://injector.simplecastaudio.com/c18a8b40-daa3-4233-8071-33fb86470964/episodes/cffe589a-e624-406f-8c38-ad891fe74d26/audio/128/default.mp3/default.mp3_ywr3ahjkcgo_229495b171f1180d8e8d28ef779eaa35_16259543.mp3?aid=rss_feed&awCollectionId=c18a8b40-daa3-4233-8071-33fb86470964&awEpisodeId=cffe589a-e624-406f-8c38-ad891fe74d26&feed=WCb5SgYj&hash_redirect=1&x-total-bytes=16259543&x-ais-classified=unclassified&listeningSessionID=0CD_382_159__fe0b66cfc284c450460cf268db5bcabe2d86112a"
+  },
+  {
+    "channelId": "90",
+    "name": "Feedback Line",
+    "status": "special_service",
+    "accessible": true
+  }
+]

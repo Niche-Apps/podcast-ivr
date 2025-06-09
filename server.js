@@ -1251,7 +1251,11 @@ app.get('/api/feeds/list', (req, res) => {
 // Audio proxy endpoint for problematic URLs with 1.25x speed
 app.get('/proxy-audio/:encodedUrl', async (req, res) => {
   try {
-    const { encodedUrl } = req.params;
+    let { encodedUrl } = req.params;
+    
+    // Remove any query parameters from the encoded URL path
+    encodedUrl = encodedUrl.split('?')[0];
+    
     const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     const speed = parseFloat(req.query.speed) || 1.25; // Default to 1.25x speed
     
