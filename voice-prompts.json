@@ -1,6 +1,6 @@
 {
   "mainMenu": {
-    "greeting": "Podcast Hotline. Press 1 for weather forecast, 2 for NPR News, 3 for This American Life, 4 for The Daily, 5 for Serial, 6 for Matt Walsh, 7 for Ben Shapiro, 8 for Michael Knowles, 9 for Andrew Klavan, 10 for Pints with Aquinas, 11 for Joe Rogan, 12 for Tim Pool, 13 for Crowder, 14 for Lex Fridman, 20 for Morning Wire, or star to repeat.",
+    "greeting": "Podcast Hotline. Press 1 for weather forecast, 2 for NPR News, 3 for This American Life, 4 for The Daily, 5 for Serial, 6 for Matt Walsh, 7 for Ben Shapiro, 8 for Michael Knowles, 9 for Andrew Klavan, 10 for Pints with Aquinas, 11 for Joe Rogan, 12 for Tim Pool, 13 for Crowder, 14 for Lex Fridman, 20 for Morning Wire, 90 to leave feedback, or star to repeat.",
     "noResponse": "We didn't receive your selection. Please call back and try again.",
     "invalidSelection": "Invalid selection. Please try again."
   },
@@ -54,6 +54,18 @@
     "downloadTracked": "Download logged: {podcastName} - ${revenue}",
     "sponsorMetrics": "SPONSOR METRICS: {sponsor} - {downloads} downloads today"
   },
+
+  "feedback": {
+    "introduction": "Welcome to the feedback line. Please leave your message after the tone. Press any key when finished, or hang up to automatically save.",
+    "recording": "Recording your message now. Speak clearly.",
+    "saving": "Thank you for your feedback. Your message is being saved and transcribed.",
+    "saved": "Your feedback has been saved successfully. Thank you for helping us improve.",
+    "error": "Sorry, there was a problem saving your feedback. Please try again later.",
+    "tooShort": "Your message was too short. Please try again with more detail.",
+    "tooLong": "Your message is getting long. Please wrap up your feedback.",
+    "transcribing": "Your message is being transcribed. This may take a moment.",
+    "transcriptionComplete": "Transcription complete. Your feedback has been logged."
+  },
   
   "customization": {
     "notes": [
@@ -61,7 +73,8 @@
       "Variables in {curly braces} are replaced dynamically",
       "Keep prompts concise for phone delivery",
       "Use clear pronunciation-friendly text",
-      "Avoid complex punctuation that might affect speech synthesis"
+      "Avoid complex punctuation that might affect speech synthesis",
+      "Podcast playback at 1.25x speed through proxy endpoint for faster listening"
     ],
     "voiceSettings": {
       "voice": "Polly.Brian",
@@ -72,8 +85,8 @@
   
   "metadata": {
     "lastUpdated": "2025-06-08",
-    "version": "1.0",
-    "totalPrompts": 35,
+    "version": "1.1",
+    "totalPrompts": 43,
     "categories": [
       "mainMenu",
       "systemTest", 
@@ -81,7 +94,8 @@
       "podcasts",
       "errors",
       "navigation",
-      "analytics"
+      "analytics",
+      "feedback"
     ]
   }
 }

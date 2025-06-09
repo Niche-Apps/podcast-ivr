@@ -15,6 +15,10 @@ const SKIP_DURATION = 120;
 const fs = require('fs');
 const path = require('path');
 
+// Import ad system and analytics
+const AdSystem = require('./ad-system');
+const CallerAnalytics = require('./caller-analytics');
+
 // Weather API configuration
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY || '3d01c291215870d467a4f3881e114bf6';
 
@@ -42,6 +46,10 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // Initialize Audio Pipeline
 let audioPipeline;
+
+// Initialize Ad System and Analytics
+const adSystem = new AdSystem();
+const analytics = new CallerAnalytics();
 
 // Simplified RSS fetching function
 async function fetchPodcastEpisodes(rssUrl) {
@@ -621,8 +629,104 @@ async function getTodayRevenue(sponsor) {
   }
 }
 
-// Analytics endpoint
+// Enhanced Analytics endpoint with ad system stats
 app.get('/analytics', async (req, res) => {
+  try {
+    const analyticsSummary = analytics.getSummary();
+    const adSystemStats = adSystem.getSystemStats();
+    
+    res.json({
+      caller_analytics: analyticsSummary,
+      ad_system: adSystemStats,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Detailed caller analytics
+app.get('/analytics/caller/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    const callerData = analytics.getCallerAnalytics(phoneNumber);
+    
+    if (!callerData) {
+      return res.status(404).json({ error: 'Caller not found' });
+    }
+    
+    res.json({
+      phoneNumber,
+      analytics: callerData,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Export analytics data
+app.get('/analytics/export/:format', async (req, res) => {
+  try {
+    const { format } = req.params;
+    
+    if (format === 'csv') {
+      const csvData = analytics.exportData('csv');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=analytics.csv');
+      res.send(csvData);
+    } else {
+      const jsonData = analytics.exportData('json');
+      res.json(jsonData);
+    }
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Ad exemption management
+app.post('/api/ads/exempt', async (req, res) => {
+  try {
+    const { phoneNumber, reason, notes } = req.body;
+    
+    if (!phoneNumber || !reason) {
+      return res.status(400).json({ error: 'Phone number and reason required' });
+    }
+    
+    const success = adSystem.addExemptNumber(phoneNumber, reason, notes);
+    
+    if (success) {
+      res.json({ success: true, message: `${phoneNumber} added to exemption list` });
+    } else {
+      res.status(409).json({ error: 'Phone number already exempt' });
+    }
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/ads/exempt/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    const success = adSystem.removeExemptNumber(phoneNumber);
+    
+    if (success) {
+      res.json({ success: true, message: `${phoneNumber} removed from exemption list` });
+    } else {
+      res.status(404).json({ error: 'Phone number not found in exemption list' });
+    }
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Legacy analytics endpoint (keeping for compatibility)
+app.get('/analytics/legacy', async (req, res) => {
   try {
     const logFile = './podcast_downloads.json';
     if (!require('fs').existsSync(logFile)) {
@@ -834,9 +938,18 @@ module.exports = app;
 // CLEAN XML IVR Handlers - No syntax errors
 // Add these to your server.js
 
-// Enhanced Main IVR Menu for Streaming
+// Enhanced Main IVR Menu for Streaming with Analytics
 app.all('/webhook/ivr-main', (req, res) => {
-  console.log('📞 Serving enhanced streaming IVR menu');
+  const caller = req.body.From || req.body.Caller;
+  const callSid = req.body.CallSid;
+  
+  console.log(`📞 Serving enhanced streaming IVR menu to ${caller}`);
+  
+  // Initialize analytics and ad system for this call
+  if (callSid && caller) {
+    analytics.startSession(callSid, caller);
+    adSystem.initSession(callSid, caller);
+  }
   
   const twiml = new VoiceResponse();
   const gather = twiml.gather({
@@ -851,16 +964,27 @@ app.all('/webhook/ivr-main', (req, res) => {
   gather.say(VOICE_CONFIG, menuText);
   
   twiml.say(VOICE_CONFIG, getPrompt('mainMenu', 'noResponse'));
+  
+  // Track call end
   twiml.hangup();
+  
+  // Add status callback to track call completion
+  if (callSid) {
+    setTimeout(() => {
+      analytics.endSession(callSid, 'no_response');
+      adSystem.endSession(callSid);
+    }, 1000);
+  }
   
   res.type('text/xml');
   res.send(twiml.toString());
 });
 
-// Handle channel selection
+// Handle channel selection with analytics and ads
 app.post('/webhook/select-channel', async (req, res) => {
   const digits = req.body.Digits;
   const caller = req.body.From || req.body.Caller;
+  const callSid = req.body.CallSid;
   
   console.log(`🔢 Channel Selection: ${digits} from ${caller}`);
   
@@ -882,9 +1006,6 @@ app.post('/webhook/select-channel', async (req, res) => {
   
   // Track selection
   trackPodcastSelection(digits, caller, req.body.CallSid);
-  
-  // Handle podcast streaming directly for all channels
-  twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'selection', {podcastName: selectedPodcast.name}));
   
   try {
     console.log(`🔍 Fetching episodes for ${selectedPodcast.name} from: ${selectedPodcast.rssUrl}`);
@@ -915,6 +1036,57 @@ app.post('/webhook/select-channel', async (req, res) => {
       twiml.redirect('/webhook/ivr-main');
       res.type('text/xml');
       return res.send(twiml.toString());
+    }
+
+    // Handle feedback service
+    if (selectedPodcast.rssUrl === 'FEEDBACK_SERVICE') {
+      if (callSid) {
+        analytics.trackChannelSelection(callSid, digits, selectedPodcast.name);
+      }
+      
+      twiml.say(VOICE_CONFIG, getPrompt('feedback', 'introduction'));
+      
+      // Start recording
+      twiml.record({
+        maxLength: 300, // 5 minutes max
+        timeout: 5,
+        trim: 'trim-silence',
+        transcribe: true,
+        transcribeCallback: `/webhook/feedback-transcription?callSid=${callSid}`,
+        action: `/webhook/feedback-complete?callSid=${callSid}`,
+        method: 'POST'
+      });
+      
+      twiml.say(VOICE_CONFIG, getPrompt('feedback', 'error'));
+      twiml.redirect('/webhook/ivr-main');
+      res.type('text/xml');
+      return res.send(twiml.toString());
+    }
+    
+    // Handle podcast streaming - announce selection for actual podcasts
+    twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'selection', {podcastName: selectedPodcast.name}));
+    
+    // Track channel selection in analytics
+    if (callSid) {
+      analytics.trackChannelSelection(callSid, digits, selectedPodcast.name);
+    }
+    
+    // Check for preroll ad
+    let prerollAd = null;
+    if (callSid) {
+      prerollAd = await adSystem.getPrerollAd(callSid, digits, selectedPodcast.name);
+    }
+    
+    // Play preroll ad if available
+    if (prerollAd) {
+      console.log(`📺 Playing preroll ad: ${prerollAd.name}`);
+      twiml.say(VOICE_CONFIG, 'A message from our sponsor.');
+      twiml.play(prerollAd.audioUrl);
+      
+      // Track ad in analytics
+      if (callSid) {
+        analytics.trackAdPlayed(callSid, prerollAd);
+      }
     }
     
     const episodes = await fetchPodcastEpisodes(selectedPodcast.rssUrl);
@@ -947,16 +1119,10 @@ app.post('/webhook/select-channel', async (req, res) => {
     // Announce and play episode
     twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'nowPlaying', {episodeTitle: episode.title.substring(0, 120)}));
     
-    // Check if this is a Simplecast injector URL that needs proxying
-    const isSimplecastInjector = finalAudioUrl.includes('injector.simplecastaudio.com');
-    
-    let playUrl = finalAudioUrl;
-    if (isSimplecastInjector) {
-      // Use our proxy endpoint to handle Simplecast redirects
-      const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
-      playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
-      console.log(`🔄 Using proxy for Simplecast URL: ${playUrl.substring(0, 80)}...`);
-    }
+    // Route ALL podcast URLs through proxy for 1.25x speed
+    const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
+    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?speed=1.25`;
+    console.log(`🚀 Using proxy for 1.25x speed playback: ${playUrl.substring(0, 80)}...`);
     
     // Set up gather for controls
     const gather = twiml.gather({
@@ -1072,13 +1238,14 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
-// Audio proxy endpoint for problematic URLs
+// Audio proxy endpoint for problematic URLs with 1.25x speed
 app.get('/proxy-audio/:encodedUrl', async (req, res) => {
   try {
     const { encodedUrl } = req.params;
     const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
+    const speed = parseFloat(req.query.speed) || 1.25; // Default to 1.25x speed
     
-    console.log(`🔄 Proxying audio request for: ${originalUrl.substring(0, 100)}...`);
+    console.log(`🔄 Proxying audio request for: ${originalUrl.substring(0, 100)}... at ${speed}x speed`);
     
     // Follow redirects to get the final audio URL
     const response = await axios({
@@ -1112,12 +1279,71 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     
-    if (audioResponse.headers['content-length']) {
+    // For speed adjustment, we need to modify content-length
+    if (speed !== 1.0 && audioResponse.headers['content-length']) {
+      // Approximate new content length (faster audio = smaller file)
+      const originalLength = parseInt(audioResponse.headers['content-length']);
+      const adjustedLength = Math.floor(originalLength / speed);
+      res.setHeader('Content-Length', adjustedLength);
+    } else if (audioResponse.headers['content-length']) {
       res.setHeader('Content-Length', audioResponse.headers['content-length']);
     }
     
-    // Pipe the audio stream
-    audioResponse.data.pipe(res);
+    // If speed adjustment is needed and ffmpeg is available
+    if (speed !== 1.0) {
+      try {
+        const { spawn } = require('child_process');
+        
+        console.log(`⚡ Applying ${speed}x speed adjustment with ffmpeg`);
+        
+        // Use ffmpeg to adjust playback speed
+        const ffmpeg = spawn('ffmpeg', [
+          '-i', 'pipe:0',        // Input from stdin
+          '-af', `atempo=${speed}`, // Audio tempo filter
+          '-f', 'mp3',           // Output format
+          '-y',                  // Overwrite output
+          '-'                    // Output to stdout
+        ], {
+          stdio: ['pipe', 'pipe', 'pipe'] // stdin, stdout, stderr
+        });
+        
+        // Handle ffmpeg errors
+        ffmpeg.stderr.on('data', (data) => {
+          const message = data.toString();
+          // Only log actual errors, not info messages
+          if (message.includes('Error') || message.includes('Failed') || message.includes('Invalid')) {
+            console.error(`🔥 FFmpeg error: ${message}`);
+          }
+        });
+        
+        ffmpeg.on('error', (error) => {
+          console.error(`❌ FFmpeg spawn error: ${error.message}`);
+          // Fallback to direct streaming
+          console.log(`🔄 Falling back to normal speed streaming`);
+          audioResponse.data.pipe(res);
+        });
+        
+        ffmpeg.on('exit', (code) => {
+          if (code !== 0) {
+            console.error(`❌ FFmpeg exited with code ${code}`);
+          }
+        });
+        
+        // Pipe: audio stream -> ffmpeg -> response
+        audioResponse.data.pipe(ffmpeg.stdin);
+        ffmpeg.stdout.pipe(res);
+        
+        console.log(`✅ Streaming at ${speed}x speed through ffmpeg`);
+        
+      } catch (ffmpegError) {
+        console.error(`⚠️ FFmpeg not available: ${ffmpegError.message}, streaming at normal speed`);
+        // Fallback to normal speed streaming
+        audioResponse.data.pipe(res);
+      }
+    } else {
+      // Normal speed - direct pipe
+      audioResponse.data.pipe(res);
+    }
     
   } catch (error) {
     console.error(`❌ Audio proxy error:`, error.message);
@@ -1204,6 +1430,63 @@ app.post('/webhook/weather-options', async (req, res) => {
   res.type('text/xml');
   res.send(twiml.toString());
 });
+
+// Test endpoint for audio proxy with speed
+app.all('/test-proxy/:channel', async (req, res) => {
+  const channel = req.params.channel;
+  const speed = parseFloat(req.query.speed) || 1.25;
+  const podcast = ALL_PODCASTS[channel];
+  
+  if (!podcast) {
+    return res.json({ error: 'Invalid channel' });
+  }
+  
+  try {
+    console.log(`Testing proxy for: ${podcast.name} at ${speed}x speed`);
+    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    
+    if (episodes.length === 0) {
+      return res.json({ error: 'No episodes found' });
+    }
+    
+    const episode = episodes[0];
+    const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+    
+    // All URLs now go through proxy for speed adjustment
+    const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+    const proxyUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?speed=${speed}`;
+    
+    res.json({
+      podcast: podcast.name,
+      episodeTitle: episode.title,
+      originalUrl: episode.audioUrl,
+      cleanedUrl: cleanedUrl,
+      needsProxy: true, // All channels now use proxy
+      proxyUrl: proxyUrl,
+      speed: speed,
+      ffmpegAvailable: await checkFFmpegAvailable()
+    });
+    
+  } catch (error) {
+    res.json({ error: error.message });
+  }
+});
+
+// Helper function to check ffmpeg availability
+async function checkFFmpegAvailable() {
+  try {
+    const { spawn } = require('child_process');
+    const ffmpeg = spawn('ffmpeg', ['-version']);
+    
+    return new Promise((resolve) => {
+      ffmpeg.on('error', () => resolve(false));
+      ffmpeg.on('exit', (code) => resolve(code === 0));
+      setTimeout(() => resolve(false), 1000); // Timeout after 1 second
+    });
+  } catch (error) {
+    return false;
+  }
+}
 
 // Test endpoint to check RSS feeds directly
 app.all('/test-podcast/:channel', async (req, res) => {
@@ -1337,9 +1620,11 @@ app.all('/webhook/play-episode', async (req, res) => {
       timeout: 5
     });
     
-    // Stream the podcast directly from URL
-    console.log(`🎵 Playing audio from: ${finalAudioUrl.split('/')[2]}`);
-    gather.play({ loop: 1 }, finalAudioUrl);
+    // Route through proxy for 1.25x speed
+    const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
+    const proxyUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?speed=1.25`;
+    console.log(`🚀 Playing at 1.25x speed from: ${finalAudioUrl.split('/')[2]}`);
+    gather.play({ loop: 1 }, proxyUrl);
     
     twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.`);
     
@@ -1603,5 +1888,168 @@ app.get('/validate-xml', (req, res) => {
     validation: 'Passed - No XML syntax errors',
     timestamp: new Date().toISOString()
   });
+});
+
+// Feedback system endpoints
+app.post('/webhook/feedback-complete', async (req, res) => {
+  const callSid = req.query.callSid;
+  const recordingUrl = req.body.RecordingUrl;
+  const recordingDuration = parseInt(req.body.RecordingDuration) || 0;
+  
+  console.log(`🎤 Feedback recording completed: ${recordingDuration}s`);
+  
+  const twiml = new VoiceResponse();
+  
+  if (recordingDuration < 3) {
+    twiml.say(VOICE_CONFIG, getPrompt('feedback', 'tooShort'));
+    twiml.redirect('/webhook/ivr-main');
+  } else {
+    twiml.say(VOICE_CONFIG, getPrompt('feedback', 'saving'));
+    
+    // Save feedback record
+    if (callSid && recordingUrl) {
+      try {
+        await saveFeedbackRecord(callSid, recordingUrl, recordingDuration);
+        analytics.trackFeedback(callSid, {
+          duration: recordingDuration,
+          recordingUrl: recordingUrl
+        });
+        twiml.say(VOICE_CONFIG, getPrompt('feedback', 'saved'));
+      } catch (error) {
+        console.error('❌ Failed to save feedback:', error.message);
+        twiml.say(VOICE_CONFIG, getPrompt('feedback', 'error'));
+      }
+    }
+    
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+app.post('/webhook/feedback-transcription', async (req, res) => {
+  const callSid = req.query.callSid;
+  const transcriptionText = req.body.TranscriptionText;
+  const transcriptionStatus = req.body.TranscriptionStatus;
+  
+  console.log(`📝 Feedback transcription: ${transcriptionStatus}`);
+  
+  if (transcriptionStatus === 'completed' && transcriptionText) {
+    try {
+      await updateFeedbackTranscription(callSid, transcriptionText);
+      analytics.trackFeedback(callSid, {
+        transcription: transcriptionText
+      });
+      console.log(`✅ Transcription saved for ${callSid}: ${transcriptionText.substring(0, 50)}...`);
+    } catch (error) {
+      console.error('❌ Failed to save transcription:', error.message);
+    }
+  }
+  
+  res.status(200).send('OK');
+});
+
+// Helper function to save feedback record
+async function saveFeedbackRecord(callSid, recordingUrl, duration) {
+  const feedbackRecord = {
+    callSid,
+    timestamp: new Date().toISOString(),
+    recordingUrl,
+    duration,
+    transcription: null,
+    processed: false
+  };
+  
+  const feedbackFile = path.join(__dirname, 'feedback-records.json');
+  let feedbackData = [];
+  
+  try {
+    if (fs.existsSync(feedbackFile)) {
+      feedbackData = JSON.parse(fs.readFileSync(feedbackFile, 'utf8'));
+    }
+  } catch (error) {
+    console.error('❌ Failed to load existing feedback:', error.message);
+  }
+  
+  feedbackData.push(feedbackRecord);
+  fs.writeFileSync(feedbackFile, JSON.stringify(feedbackData, null, 2));
+  
+  console.log(`💾 Feedback record saved: ${callSid}`);
+}
+
+// Helper function to update transcription
+async function updateFeedbackTranscription(callSid, transcription) {
+  const feedbackFile = path.join(__dirname, 'feedback-records.json');
+  
+  try {
+    if (fs.existsSync(feedbackFile)) {
+      const feedbackData = JSON.parse(fs.readFileSync(feedbackFile, 'utf8'));
+      const record = feedbackData.find(f => f.callSid === callSid);
+      
+      if (record) {
+        record.transcription = transcription;
+        record.processed = true;
+        record.transcribedAt = new Date().toISOString();
+        
+        fs.writeFileSync(feedbackFile, JSON.stringify(feedbackData, null, 2));
+        console.log(`📝 Transcription updated for ${callSid}`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Failed to update transcription:', error.message);
+  }
+}
+
+// Feedback management endpoints
+app.get('/api/feedback/list', async (req, res) => {
+  try {
+    const feedbackFile = path.join(__dirname, 'feedback-records.json');
+    let feedbackData = [];
+    
+    if (fs.existsSync(feedbackFile)) {
+      feedbackData = JSON.parse(fs.readFileSync(feedbackFile, 'utf8'));
+    }
+    
+    res.json({
+      total: feedbackData.length,
+      feedback: feedbackData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+      summary: {
+        processed: feedbackData.filter(f => f.processed).length,
+        totalDuration: feedbackData.reduce((sum, f) => sum + (f.duration || 0), 0)
+      }
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/feedback/download/:callSid', async (req, res) => {
+  try {
+    const { callSid } = req.params;
+    const feedbackFile = path.join(__dirname, 'feedback-records.json');
+    
+    if (!fs.existsSync(feedbackFile)) {
+      return res.status(404).json({ error: 'No feedback records found' });
+    }
+    
+    const feedbackData = JSON.parse(fs.readFileSync(feedbackFile, 'utf8'));
+    const record = feedbackData.find(f => f.callSid === callSid);
+    
+    if (!record) {
+      return res.status(404).json({ error: 'Feedback record not found' });
+    }
+    
+    if (!record.recordingUrl) {
+      return res.status(404).json({ error: 'Recording URL not available' });
+    }
+    
+    // Redirect to recording URL for download
+    res.redirect(record.recordingUrl);
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 

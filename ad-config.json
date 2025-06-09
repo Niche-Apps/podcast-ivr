@@ -1,0 +1,85 @@
+{
+  "providers": {
+    "spotify": {
+      "enabled": true,
+      "apiUrl": "https://adstudio.spotify.com/api/v1/ads",
+      "apiKey": "YOUR_SPOTIFY_AD_API_KEY",
+      "prerollEnabled": true,
+      "midrollEnabled": true,
+      "frequency": {
+        "preroll": 100,
+        "midroll": 25
+      }
+    },
+    "custom": {
+      "enabled": true,
+      "prerollEnabled": true,
+      "midrollEnabled": true,
+      "frequency": {
+        "preroll": 30,
+        "midroll": 15
+      }
+    }
+  },
+  "customAds": {
+    "preroll": [
+      {
+        "id": "custom_preroll_1",
+        "name": "Local Business Sponsor",
+        "audioUrl": "https://your-domain.com/ads/preroll-local-business.mp3",
+        "duration": 30,
+        "sponsor": "Local Business",
+        "revenue": 2.50,
+        "weight": 60,
+        "active": true
+      },
+      {
+        "id": "custom_preroll_2", 
+        "name": "Tech Company Sponsor",
+        "audioUrl": "https://your-domain.com/ads/preroll-tech-company.mp3",
+        "duration": 15,
+        "sponsor": "Tech Company",
+        "revenue": 1.75,
+        "weight": 40,
+        "active": true
+      }
+    ],
+    "midroll": [
+      {
+        "id": "custom_midroll_1",
+        "name": "Restaurant Chain",
+        "audioUrl": "https://your-domain.com/ads/midroll-restaurant.mp3", 
+        "duration": 20,
+        "sponsor": "Restaurant Chain",
+        "revenue": 1.25,
+        "weight": 50,
+        "active": true
+      },
+      {
+        "id": "custom_midroll_2",
+        "name": "Insurance Company",
+        "audioUrl": "https://your-domain.com/ads/midroll-insurance.mp3",
+        "duration": 25,
+        "sponsor": "Insurance Company", 
+        "revenue": 2.00,
+        "weight": 50,
+        "active": true
+      }
+    ]
+  },
+  "settings": {
+    "midrollIntervalMinutes": 15,
+    "maxAdsPerSession": 5,
+    "adVolumeAdjustment": 1.0,
+    "skipAdAfterSeconds": 30,
+    "adTransitionDuration": 2,
+    "fallbackEnabled": true,
+    "fallbackMessage": "Thank you for listening. Now back to your podcast."
+  },
+  "metadata": {
+    "lastUpdated": "2025-06-08",
+    "version": "1.0",
+    "totalCustomAds": 4,
+    "description": "Ad configuration for podcast IVR system with preroll/midroll support"
+  }
+}

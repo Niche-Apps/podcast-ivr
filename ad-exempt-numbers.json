@@ -1,0 +1,39 @@
+{
+  "exemptNumbers": [
+    {
+      "number": "+19185551234",
+      "reason": "Premium subscriber",
+      "exemptSince": "2025-06-08",
+      "notes": "Annual premium membership"
+    },
+    {
+      "number": "+19183887174", 
+      "reason": "Staff member",
+      "exemptSince": "2025-06-08",
+      "notes": "Internal testing and development"
+    },
+    {
+      "number": "+12145553456",
+      "reason": "VIP sponsor",
+      "exemptSince": "2025-06-08", 
+      "notes": "Major sponsor representative"
+    }
+  ],
+  "settings": {
+    "exemptionTypes": [
+      "premium_subscriber",
+      "staff_member", 
+      "vip_sponsor",
+      "media_reviewer",
+      "beta_tester",
+      "sponsor_representative"
+    ],
+    "autoExpireAfterDays": 365,
+    "requireReason": true
+  },
+  "metadata": {
+    "lastUpdated": "2025-06-08",
+    "totalExemptions": 3,
+    "description": "Phone numbers exempt from ad playback"
+  }
+}

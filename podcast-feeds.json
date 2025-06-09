@@ -84,6 +84,11 @@
       "name": "Morning Wire",
       "rssUrl": "https://feeds.simplecast.com/WCb5SgYj",
       "description": "Daily Wire morning news"
+    },
+    "90": {
+      "name": "Feedback Line",
+      "rssUrl": "FEEDBACK_SERVICE",
+      "description": "Leave audio feedback with transcription"
     }
   },
   "extensions": {
@@ -147,13 +152,14 @@
   },
   "metadata": {
     "lastUpdated": "2025-06-08",
-    "totalFeeds": 32,
-    "categories": ["news", "conservative", "philosophy", "entertainment"],
+    "totalFeeds": 33,
+    "categories": ["news", "conservative", "philosophy", "entertainment", "feedback"],
     "notes": [
       "Extensions (21-30) are ready to add but not active in main menu",
       "Testing feeds (99) are for development only",
       "All RSS URLs verified as of last update",
-      "Simplecast feeds require URL cleaning for tracking removal"
+      "Simplecast feeds require URL cleaning for tracking removal",
+      "Extension 90 provides feedback recording with transcription"
     ]
   }
 }
