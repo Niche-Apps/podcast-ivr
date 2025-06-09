@@ -947,6 +947,17 @@ app.post('/webhook/select-channel', async (req, res) => {
     // Announce and play episode
     twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'nowPlaying', {episodeTitle: episode.title.substring(0, 120)}));
     
+    // Check if this is a Simplecast injector URL that needs proxying
+    const isSimplecastInjector = finalAudioUrl.includes('injector.simplecastaudio.com');
+    
+    let playUrl = finalAudioUrl;
+    if (isSimplecastInjector) {
+      // Use our proxy endpoint to handle Simplecast redirects
+      const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
+      playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+      console.log(`🔄 Using proxy for Simplecast URL: ${playUrl.substring(0, 80)}...`);
+    }
+    
     // Set up gather for controls
     const gather = twiml.gather({
       numDigits: 1,
@@ -956,7 +967,7 @@ app.post('/webhook/select-channel', async (req, res) => {
     });
     
     // Play the podcast
-    gather.play({ loop: 1 }, finalAudioUrl);
+    gather.play({ loop: 1 }, playUrl);
     gather.say(VOICE_CONFIG, getPrompt('podcasts', 'pressAnyKey'));
     
     // Fallback to main menu
@@ -1059,6 +1070,59 @@ app.get('/api/feeds/list', (req, res) => {
     totalActive: Object.keys(ALL_PODCASTS).length,
     totalExtensions: Object.keys(EXTENSION_PODCASTS).length
   });
+});
+
+// Audio proxy endpoint for problematic URLs
+app.get('/proxy-audio/:encodedUrl', async (req, res) => {
+  try {
+    const { encodedUrl } = req.params;
+    const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
+    
+    console.log(`🔄 Proxying audio request for: ${originalUrl.substring(0, 100)}...`);
+    
+    // Follow redirects to get the final audio URL
+    const response = await axios({
+      method: 'HEAD',
+      url: originalUrl,
+      maxRedirects: 10,
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
+        'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
+      }
+    });
+    
+    const finalUrl = response.request.res.responseUrl || originalUrl;
+    console.log(`✅ Resolved to: ${finalUrl.substring(0, 100)}...`);
+    
+    // Stream the audio content
+    const audioResponse = await axios({
+      method: 'GET',
+      url: finalUrl,
+      responseType: 'stream',
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
+        'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
+      }
+    });
+    
+    // Set appropriate headers for audio streaming
+    res.setHeader('Content-Type', audioResponse.headers['content-type'] || 'audio/mpeg');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    
+    if (audioResponse.headers['content-length']) {
+      res.setHeader('Content-Length', audioResponse.headers['content-length']);
+    }
+    
+    // Pipe the audio stream
+    audioResponse.data.pipe(res);
+    
+  } catch (error) {
+    console.error(`❌ Audio proxy error:`, error.message);
+    res.status(404).send('Audio not available');
+  }
 });
 
 // Handle weather zipcode input
