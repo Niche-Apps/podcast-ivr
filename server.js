@@ -1180,10 +1180,10 @@ app.post('/webhook/select-channel', async (req, res) => {
     // Announce and play episode
     twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'nowPlaying', {episodeTitle: episode.title.substring(0, 120)}));
     
-    // Route ALL podcast URLs through proxy for 1.25x speed
+    // Route ALL podcast URLs through proxy 
     const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
-    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?speed=1.25`;
-    console.log(`🚀 Using proxy for 1.25x speed playback: ${playUrl.substring(0, 80)}...`);
+    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+    console.log(`🚀 Using proxy for playback: ${playUrl.substring(0, 80)}...`);
     
     // Set up gather for controls
     const gather = twiml.gather({
@@ -1299,7 +1299,7 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
-// Audio proxy endpoint for problematic URLs with 1.25x speed
+// Audio proxy endpoint for problematic URLs
 app.get('/proxy-audio/:encodedUrl', async (req, res) => {
   try {
     let { encodedUrl } = req.params;
@@ -1308,9 +1308,8 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     encodedUrl = encodedUrl.split('?')[0];
     
     const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
-    const speed = parseFloat(req.query.speed) || 1.25; // Default to 1.25x speed
     
-    console.log(`🔄 Proxying audio request for: ${originalUrl.substring(0, 100)}... at ${speed}x speed`);
+    console.log(`🔄 Proxying audio request for: ${originalUrl.substring(0, 100)}...`);
     
     // Follow redirects to get the final audio URL
     const response = await axios({
@@ -1344,75 +1343,13 @@ app.get('/proxy-audio/:encodedUrl', async (req, res) => {
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     
-    // For speed adjustment, we need to modify content-length
-    if (speed !== 1.0 && audioResponse.headers['content-length']) {
-      // Approximate new content length (faster audio = smaller file)
-      const originalLength = parseInt(audioResponse.headers['content-length']);
-      const adjustedLength = Math.floor(originalLength / speed);
-      res.setHeader('Content-Length', adjustedLength);
-    } else if (audioResponse.headers['content-length']) {
+    // Set content length if available
+    if (audioResponse.headers['content-length']) {
       res.setHeader('Content-Length', audioResponse.headers['content-length']);
     }
     
-    // Temporarily disable speed adjustment for all URLs to fix playback issues
-    // TODO: Implement client-side speed adjustment or find Twilio-compatible solution
-    const disableSpeedAdjustment = true;
-    
-    // If speed adjustment is needed and ffmpeg is available
-    if (speed !== 1.0 && !disableSpeedAdjustment) {
-      try {
-        const { spawn } = require('child_process');
-        
-        console.log(`⚡ Applying ${speed}x speed adjustment with ffmpeg`);
-        
-        // Use ffmpeg to adjust playback speed
-        const ffmpeg = spawn('ffmpeg', [
-          '-i', 'pipe:0',        // Input from stdin
-          '-af', `atempo=${speed}`, // Audio tempo filter
-          '-f', 'mp3',           // Output format
-          '-y',                  // Overwrite output
-          '-'                    // Output to stdout
-        ], {
-          stdio: ['pipe', 'pipe', 'pipe'] // stdin, stdout, stderr
-        });
-        
-        // Handle ffmpeg errors
-        ffmpeg.stderr.on('data', (data) => {
-          const message = data.toString();
-          // Only log actual errors, not info messages
-          if (message.includes('Error') || message.includes('Failed') || message.includes('Invalid')) {
-            console.error(`🔥 FFmpeg error: ${message}`);
-          }
-        });
-        
-        ffmpeg.on('error', (error) => {
-          console.error(`❌ FFmpeg spawn error: ${error.message}`);
-          // Fallback to direct streaming
-          console.log(`🔄 Falling back to normal speed streaming`);
-          audioResponse.data.pipe(res);
-        });
-        
-        ffmpeg.on('exit', (code) => {
-          if (code !== 0) {
-            console.error(`❌ FFmpeg exited with code ${code}`);
-          }
-        });
-        
-        // Pipe: audio stream -> ffmpeg -> response
-        audioResponse.data.pipe(ffmpeg.stdin);
-        ffmpeg.stdout.pipe(res);
-        
-        console.log(`✅ Streaming at ${speed}x speed through ffmpeg`);
-        
-      } catch (ffmpegError) {
-        console.error(`⚠️ FFmpeg not available: ${ffmpegError.message}, streaming at normal speed`);
-        // Fallback to normal speed streaming
-        audioResponse.data.pipe(res);
-      }
-    } else {
-      // Normal speed - direct pipe
-      audioResponse.data.pipe(res);
-    }
+    // Stream audio directly at normal speed
+    audioResponse.data.pipe(res);
     
   } catch (error) {
     console.error(`❌ Audio proxy error:`, error.message);
@@ -1500,10 +1437,9 @@ app.post('/webhook/weather-options', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Test endpoint for audio proxy with speed
+// Test endpoint for audio proxy
 app.all('/test-proxy/:channel', async (req, res) => {
   const channel = req.params.channel;
-  const speed = parseFloat(req.query.speed) || 1.25;
   const podcast = ALL_PODCASTS[channel];
   
   if (!podcast) {
@@ -1511,7 +1447,7 @@ app.all('/test-proxy/:channel', async (req, res) => {
   }
   
   try {
-    console.log(`Testing proxy for: ${podcast.name} at ${speed}x speed`);
+    console.log(`Testing proxy for: ${podcast.name}`);
     const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
     
     if (episodes.length === 0) {
@@ -1521,19 +1457,17 @@ app.all('/test-proxy/:channel', async (req, res) => {
     const episode = episodes[0];
     const cleanedUrl = cleanAudioUrl(episode.audioUrl);
     
-    // All URLs now go through proxy for speed adjustment
+    // All URLs now go through proxy
     const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-    const proxyUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?speed=${speed}`;
+    const proxyUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
     
     res.json({
       podcast: podcast.name,
       episodeTitle: episode.title,
       originalUrl: episode.audioUrl,
       cleanedUrl: cleanedUrl,
-      needsProxy: true, // All channels now use proxy
-      proxyUrl: proxyUrl,
-      speed: speed,
-      ffmpegAvailable: await checkFFmpegAvailable()
+      needsProxy: true,
+      proxyUrl: proxyUrl
     });
     
   } catch (error) {
@@ -1689,10 +1623,10 @@ app.all('/webhook/play-episode', async (req, res) => {
       timeout: 5
     });
     
-    // Route through proxy for 1.25x speed
+    // Route through proxy
     const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
-    const proxyUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}?speed=1.25`;
-    console.log(`🚀 Playing at 1.25x speed from: ${finalAudioUrl.split('/')[2]}`);
+    const proxyUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+    console.log(`🚀 Playing from: ${finalAudioUrl.split('/')[2]}`);
     gather.play({ loop: 1 }, proxyUrl);
     
     twiml.say(VOICE_CONFIG, `Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.`);
