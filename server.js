@@ -1361,10 +1361,19 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
     let { encodedUrl, type, startTime } = req.params;
     const seekTime = type === 'start' ? parseInt(startTime) || 0 : parseInt(req.query.start) || 0;
     
+    console.log(`🎵 Proxy request: type=${type}, startTime=${startTime}, seekTime=${seekTime}`);
+    
     // Remove any query parameters from the encoded URL path
     encodedUrl = encodedUrl.split('?')[0];
     
-    const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
+    let originalUrl;
+    try {
+      originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
+      console.log(`🔗 Decoded URL: ${originalUrl.substring(0, 100)}...`);
+    } catch (decodeError) {
+      console.error(`❌ Base64 decode error:`, decodeError.message);
+      return res.status(400).send('Invalid encoded URL');
+    }
     
     console.log(`🎵 Streaming: ${originalUrl.substring(0, 100)}... ${seekTime > 0 ? `(seeking to ${seekTime}s)` : ''}`);
     
@@ -1409,22 +1418,27 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
           }
         }
       } catch (headError) {
-        console.log(`⚠️ HEAD request failed (${headError.code}), proceeding with full stream`);
+        console.log(`⚠️ HEAD request failed (${headError.code || headError.message}), proceeding with full stream`);
         // Continue without range - this is expected for some CDNs
       }
     }
     
     // Stream with range support
+    console.log(`🚀 Making request to: ${originalUrl.substring(0, 80)}... with headers:`, Object.keys(headers));
+    
     const audioResponse = await axios({
       method: 'GET',
       url: originalUrl,
       responseType: 'stream',
       timeout: 30000,
       maxRedirects: 2,
-      headers: headers
+      headers: headers,
+      validateStatus: function (status) {
+        return status >= 200 && status < 400; // Accept 2xx and 3xx
+      }
     });
     
-    console.log(`✅ Stream started: ${audioResponse.headers['content-type']} ${audioResponse.status === 206 ? '(partial content)' : ''}`);
+    console.log(`✅ Stream started: ${audioResponse.status} ${audioResponse.headers['content-type']} ${audioResponse.status === 206 ? '(partial content)' : ''}`);
     
     // Set headers for streaming
     res.setHeader('Content-Type', audioResponse.headers['content-type'] || 'audio/mpeg');
@@ -1476,6 +1490,28 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
     }
     
     res.status(404).send('Audio not available');
+  }
+});
+
+// Debug endpoint to test proxy URL construction
+app.get('/debug-proxy/:encodedUrl/:type?/:startTime?', async (req, res) => {
+  try {
+    let { encodedUrl, type, startTime } = req.params;
+    const seekTime = type === 'start' ? parseInt(startTime) || 0 : parseInt(req.query.start) || 0;
+    
+    encodedUrl = encodedUrl.split('?')[0];
+    const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
+    
+    res.json({
+      encodedUrl: encodedUrl.substring(0, 50) + '...',
+      type,
+      startTime,
+      seekTime,
+      originalUrl,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
