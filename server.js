@@ -197,9 +197,9 @@ async function getWeatherForecast(zipcode) {
         console.error(`❌ Weather fetch failed for ${zipcode}:`, error.message);
         
         if (error.message.includes('Invalid zipcode')) {
-            return `Sorry, I couldn't find weather information for zipcode ${zipcode}. Please make sure you entered a valid US zipcode.`;
+            return getPrompt('weather', 'zipcodeNotFound', {zipcode});
         } else {
-            return `Sorry, weather information is temporarily unavailable. Please try again later.`;
+            return getPrompt('weather', 'unavailable');
         }
     }
 }
@@ -287,6 +287,47 @@ try {
     '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' }
   };
   console.log('⚠️ Using fallback podcast configuration');
+}
+
+// Load voice prompts from external JSON file
+let VOICE_PROMPTS = {};
+
+try {
+  VOICE_PROMPTS = JSON.parse(fs.readFileSync(path.join(__dirname, 'voice-prompts.json'), 'utf8'));
+  console.log(`🎙️ Loaded ${VOICE_PROMPTS.metadata.totalPrompts} voice prompts from voice-prompts.json`);
+} catch (error) {
+  console.error('❌ Failed to load voice-prompts.json:', error.message);
+  
+  // Fallback prompts
+  VOICE_PROMPTS = {
+    mainMenu: {
+      greeting: "Podcast Hotline. Please make a selection.",
+      noResponse: "No selection received. Please try again."
+    }
+  };
+  console.log('⚠️ Using fallback voice prompts');
+}
+
+// Helper function to get prompt with variable replacement
+function getPrompt(category, key, variables = {}) {
+  try {
+    let prompt = VOICE_PROMPTS[category][key];
+    if (!prompt) {
+      console.warn(`⚠️ Prompt not found: ${category}.${key}`);
+      return `Error: prompt ${category}.${key} not found`;
+    }
+    
+    // Replace variables in the prompt
+    Object.keys(variables).forEach(varName => {
+      const placeholder = `{${varName}}`;
+      prompt = prompt.replace(new RegExp(placeholder, 'g'), variables[varName]);
+    });
+    
+    return prompt;
+  } catch (error) {
+    console.error(`❌ Error getting prompt ${category}.${key}:`, error.message);
+    return 'System error';
+  }
 }
 
 // Health check endpoint
@@ -805,11 +846,11 @@ app.all('/webhook/ivr-main', (req, res) => {
     method: 'POST'
   });
   
-  const menuText = 'Podcast Hotline. Press 0 for system test, 1 for weather forecast, 2 for NPR, 3 for This American Life, 4 for The Daily, 5 for Serial, 6 for Matt Walsh, 7 for Ben Shapiro, 8 for Michael Knowles, 9 for Andrew Klavan, 10 for Pints with Aquinas, 11 for Joe Rogan, 12 for Tim Pool, 13 for Crowder, 14 for Lex Fridman, 20 for Morning Wire, or star to repeat.';
+  const menuText = getPrompt('mainMenu', 'greeting');
   
   gather.say(VOICE_CONFIG, menuText);
   
-  twiml.say(VOICE_CONFIG, 'We didn\'t receive your selection. Please call back and try again.');
+  twiml.say(VOICE_CONFIG, getPrompt('mainMenu', 'noResponse'));
   twiml.hangup();
   
   res.type('text/xml');
@@ -831,7 +872,7 @@ app.post('/webhook/select-channel', async (req, res) => {
   }
   
   if (!ALL_PODCASTS[digits]) {
-    twiml.say(VOICE_CONFIG, 'Invalid selection. Please try again.');
+    twiml.say(VOICE_CONFIG, getPrompt('mainMenu', 'invalidSelection'));
     twiml.redirect('/webhook/ivr-main');
     return res.type('text/xml').send(twiml.toString());
   }
@@ -843,14 +884,14 @@ app.post('/webhook/select-channel', async (req, res) => {
   trackPodcastSelection(digits, caller, req.body.CallSid);
   
   // Handle podcast streaming directly for all channels
-  twiml.say(VOICE_CONFIG, `You selected ${selectedPodcast.name}. Loading latest episode.`);
+  twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'selection', {podcastName: selectedPodcast.name}));
   
   try {
     console.log(`🔍 Fetching episodes for ${selectedPodcast.name} from: ${selectedPodcast.rssUrl}`);
     
     // Handle static test channel
     if (selectedPodcast.rssUrl === 'STATIC_TEST') {
-      twiml.say(VOICE_CONFIG, 'System test successful. The Twilio integration is working properly.');
+      twiml.say(VOICE_CONFIG, getPrompt('systemTest', 'success'));
       twiml.redirect('/webhook/ivr-main');
       res.type('text/xml');
       return res.send(twiml.toString());
@@ -858,7 +899,7 @@ app.post('/webhook/select-channel', async (req, res) => {
     
     // Handle weather service
     if (selectedPodcast.rssUrl === 'WEATHER_SERVICE') {
-      twiml.say(VOICE_CONFIG, 'Weather forecast service. Please enter your 5-digit zipcode followed by the pound key.');
+      twiml.say(VOICE_CONFIG, getPrompt('weather', 'introduction'));
       
       const gather = twiml.gather({
         numDigits: 5,
@@ -868,9 +909,9 @@ app.post('/webhook/select-channel', async (req, res) => {
         method: 'POST'
       });
       
-      gather.say(VOICE_CONFIG, 'Enter your zipcode now.');
+      gather.say(VOICE_CONFIG, getPrompt('weather', 'enterZipcode'));
       
-      twiml.say(VOICE_CONFIG, 'I did not receive your zipcode. Returning to main menu.');
+      twiml.say(VOICE_CONFIG, getPrompt('weather', 'noZipcodeReceived'));
       twiml.redirect('/webhook/ivr-main');
       res.type('text/xml');
       return res.send(twiml.toString());
@@ -879,7 +920,7 @@ app.post('/webhook/select-channel', async (req, res) => {
     const episodes = await fetchPodcastEpisodes(selectedPodcast.rssUrl);
     
     if (!episodes || episodes.length === 0) {
-      twiml.say(VOICE_CONFIG, `Sorry, no episodes are available for ${selectedPodcast.name} right now. Please try another podcast.`);
+      twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'noEpisodes', {podcastName: selectedPodcast.name}));
       twiml.redirect('/webhook/ivr-main');
       res.type('text/xml');
       return res.send(twiml.toString());
@@ -904,7 +945,7 @@ app.post('/webhook/select-channel', async (req, res) => {
     console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
     
     // Announce and play episode
-    twiml.say(VOICE_CONFIG, `Now playing: ${episode.title.substring(0, 120)}`);
+    twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'nowPlaying', {episodeTitle: episode.title.substring(0, 120)}));
     
     // Set up gather for controls
     const gather = twiml.gather({
@@ -916,14 +957,14 @@ app.post('/webhook/select-channel', async (req, res) => {
     
     // Play the podcast
     gather.play({ loop: 1 }, finalAudioUrl);
-    gather.say(VOICE_CONFIG, 'Press any key to return to the main menu.');
+    gather.say(VOICE_CONFIG, getPrompt('podcasts', 'pressAnyKey'));
     
     // Fallback to main menu
     twiml.redirect('/webhook/ivr-main');
     
   } catch (error) {
     console.error(`❌ Error playing ${selectedPodcast.name}:`, error.message);
-    twiml.say(VOICE_CONFIG, `Sorry, there's a technical issue with ${selectedPodcast.name}. Please try another podcast or call back later.`);
+    twiml.say(VOICE_CONFIG, getPrompt('podcasts', 'technicalIssue', {podcastName: selectedPodcast.name}));
     twiml.redirect('/webhook/ivr-main');
   }
   
@@ -1030,13 +1071,13 @@ app.post('/webhook/weather-zipcode', async (req, res) => {
   const twiml = new VoiceResponse();
   
   if (!zipcode || zipcode.length !== 5 || !/^\d{5}$/.test(zipcode)) {
-    twiml.say(VOICE_CONFIG, 'Sorry, that does not appear to be a valid 5-digit zipcode. Please try again.');
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'invalidZipcode'));
     twiml.redirect('/webhook/ivr-main');
     return res.type('text/xml').send(twiml.toString());
   }
   
   try {
-    twiml.say(VOICE_CONFIG, `Getting weather forecast for zipcode ${zipcode.split('').join(' ')}.`);
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'gettingForecast', {zipcode: zipcode.split('').join(' ')}));
     
     const weatherReport = await getWeatherForecast(zipcode);
     twiml.say(VOICE_CONFIG, weatherReport);
@@ -1048,13 +1089,13 @@ app.post('/webhook/weather-zipcode', async (req, res) => {
       action: '/webhook/weather-options',
       method: 'POST'
     });
-    gather.say(VOICE_CONFIG, 'Press 1 to hear the forecast again, 2 for a different zipcode, or any other key to return to the main menu.');
+    gather.say(VOICE_CONFIG, getPrompt('weather', 'options'));
     
     twiml.redirect('/webhook/ivr-main');
     
   } catch (error) {
     console.error(`❌ Weather error for ${zipcode}:`, error.message);
-    twiml.say(VOICE_CONFIG, 'Sorry, I was unable to get weather information at this time. Please try again later.');
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'unavailable'));
     twiml.redirect('/webhook/ivr-main');
   }
   
@@ -1069,7 +1110,7 @@ app.post('/webhook/weather-options', async (req, res) => {
   
   if (digits === '1') {
     // Repeat last forecast - for now just redirect back to weather service
-    twiml.say(VOICE_CONFIG, 'Please enter your zipcode again to hear the forecast.');
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'repeatPrompt'));
     const gather = twiml.gather({
       numDigits: 5,
       timeout: 10,
@@ -1077,11 +1118,11 @@ app.post('/webhook/weather-options', async (req, res) => {
       action: '/webhook/weather-zipcode',
       method: 'POST'
     });
-    gather.say(VOICE_CONFIG, 'Enter your zipcode now.');
+    gather.say(VOICE_CONFIG, getPrompt('weather', 'enterZipcode'));
     twiml.redirect('/webhook/ivr-main');
   } else if (digits === '2') {
     // Different zipcode
-    twiml.say(VOICE_CONFIG, 'Please enter a different zipcode.');
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'differentZipcode'));
     const gather = twiml.gather({
       numDigits: 5,
       timeout: 10,
@@ -1089,7 +1130,7 @@ app.post('/webhook/weather-options', async (req, res) => {
       action: '/webhook/weather-zipcode',
       method: 'POST'
     });
-    gather.say(VOICE_CONFIG, 'Enter your zipcode now.');
+    gather.say(VOICE_CONFIG, getPrompt('weather', 'enterZipcode'));
     twiml.redirect('/webhook/ivr-main');
   } else {
     // Return to main menu

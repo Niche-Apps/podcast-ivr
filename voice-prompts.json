@@ -1,0 +1,86 @@
+{
+  "mainMenu": {
+    "greeting": "Podcast Hotline. Press 0 for system test, 1 for weather forecast, 2 for NPR, 3 for This American Life, 4 for The Daily, 5 for Serial, 6 for Matt Walsh, 7 for Ben Shapiro, 8 for Michael Knowles, 9 for Andrew Klavan, 10 for Pints with Aquinas, 11 for Joe Rogan, 12 for Tim Pool, 13 for Crowder, 14 for Lex Fridman, 20 for Morning Wire, or star to repeat.",
+    "noResponse": "We didn't receive your selection. Please call back and try again.",
+    "invalidSelection": "Invalid selection. Please try again."
+  },
+  
+  "systemTest": {
+    "success": "System test successful. The Twilio integration is working properly."
+  },
+  
+  "weather": {
+    "introduction": "Weather forecast service. Please enter your 5-digit zipcode followed by the pound key.",
+    "enterZipcode": "Enter your zipcode now.",
+    "noZipcodeReceived": "I did not receive your zipcode. Returning to main menu.",
+    "invalidZipcode": "Sorry, that does not appear to be a valid 5-digit zipcode. Please try again.",
+    "gettingForecast": "Getting weather forecast for zipcode {zipcode}.",
+    "unavailable": "Sorry, I was unable to get weather information at this time. Please try again later.",
+    "zipcodeNotFound": "Sorry, I couldn't find weather information for zipcode {zipcode}. Please make sure you entered a valid US zipcode.",
+    "options": "Press 1 to hear the forecast again, 2 for a different zipcode, or any other key to return to the main menu.",
+    "repeatPrompt": "Please enter your zipcode again to hear the forecast.",
+    "differentZipcode": "Please enter a different zipcode."
+  },
+  
+  "podcasts": {
+    "selection": "You selected {podcastName}. Loading latest episode.",
+    "nowPlaying": "Now playing: {episodeTitle}",
+    "noEpisodes": "Sorry, no episodes are available for {podcastName} right now. Please try another podcast.",
+    "technicalIssue": "Sorry, there's a technical issue with {podcastName}. Please try another podcast or call back later.",
+    "playbackControls": "Press 1 for previous, 3 for next, 4 to skip back, 6 to skip forward, or 0 for menu.",
+    "pressAnyKey": "Press any key to return to the main menu.",
+    "previousEpisode": "Going to previous episode.",
+    "nextEpisode": "Going to next episode.",
+    "jumpingBack": "Jumping back to {minutes} minutes.",
+    "jumpingForward": "Jumping forward to {minutes} minutes.",
+    "returningToMenu": "Returning to main menu.",
+    "resumingAt": "Resuming at {minutes} minutes."
+  },
+  
+  "errors": {
+    "general": "Sorry, there was an error processing your request. Please try again.",
+    "timeout": "{podcastName} is taking longer than usual to load. Please try again in a moment or select another podcast.",
+    "unavailable": "Sorry, this episode is temporarily unavailable. Trying next episode.",
+    "returnToMenu": "Returning to main menu."
+  },
+  
+  "navigation": {
+    "repeatMenu": "Press star to repeat the menu.",
+    "mainMenuReturn": "Returning to main menu."
+  },
+  
+  "analytics": {
+    "downloadTracked": "Download logged: {podcastName} - ${revenue}",
+    "sponsorMetrics": "SPONSOR METRICS: {sponsor} - {downloads} downloads today"
+  },
+  
+  "customization": {
+    "notes": [
+      "All prompts use British voice (Polly.Brian) with en-GB language",
+      "Variables in {curly braces} are replaced dynamically",
+      "Keep prompts concise for phone delivery",
+      "Use clear pronunciation-friendly text",
+      "Avoid complex punctuation that might affect speech synthesis"
+    ],
+    "voiceSettings": {
+      "voice": "Polly.Brian",
+      "language": "en-GB",
+      "description": "British male voice for professional podcast hotline"
+    }
+  },
+  
+  "metadata": {
+    "lastUpdated": "2025-06-08",
+    "version": "1.0",
+    "totalPrompts": 35,
+    "categories": [
+      "mainMenu",
+      "systemTest", 
+      "weather",
+      "podcasts",
+      "errors",
+      "navigation",
+      "analytics"
+    ]
+  }
+}
