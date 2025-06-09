@@ -131,7 +131,7 @@ async function getWeatherForecast(zipcode) {
         const { lat, lon, name } = geoResponse.data;
         console.log(`📍 Location found: ${name} (${lat}, ${lon})`);
         
-        // Get current weather and forecast
+        // Get current weather and 5-day forecast
         const weatherResponse = await axios.get(
             `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=imperial`,
             { timeout: 5000 }
@@ -139,21 +139,56 @@ async function getWeatherForecast(zipcode) {
         
         const data = weatherResponse.data;
         const current = data.list[0];
-        const today = data.list.slice(0, 8); // Next 24 hours
         
-        // Format weather report
+        // Format current conditions
         const currentTemp = Math.round(current.main.temp);
         const feelsLike = Math.round(current.main.feels_like);
         const description = current.weather[0].description;
         const humidity = current.main.humidity;
         const windSpeed = Math.round(current.wind.speed);
         
-        // Get high/low for today
-        const todayTemps = today.map(item => item.main.temp);
-        const highTemp = Math.round(Math.max(...todayTemps));
-        const lowTemp = Math.round(Math.min(...todayTemps));
+        // Group forecasts by day
+        const dailyForecasts = {};
+        const today = new Date().toDateString();
         
-        const weatherReport = `Weather forecast for ${name}. Current temperature is ${currentTemp} degrees Fahrenheit, feels like ${feelsLike}. Current conditions: ${description}. Today's high will be ${highTemp} degrees, low ${lowTemp} degrees. Humidity ${humidity} percent. Wind speed ${windSpeed} miles per hour.`;
+        data.list.forEach(item => {
+            const date = new Date(item.dt * 1000);
+            const dateStr = date.toDateString();
+            
+            if (!dailyForecasts[dateStr]) {
+                dailyForecasts[dateStr] = {
+                    date: dateStr,
+                    temps: [],
+                    conditions: [],
+                    dayName: date.toLocaleDateString('en-US', { weekday: 'long' })
+                };
+            }
+            
+            dailyForecasts[dateStr].temps.push(item.main.temp);
+            dailyForecasts[dateStr].conditions.push(item.weather[0].description);
+        });
+        
+        // Build multi-day forecast
+        let weatherReport = `Weather forecast for ${name}. Currently ${currentTemp} degrees, feels like ${feelsLike}. Current conditions: ${description}. Humidity ${humidity} percent, wind ${windSpeed} miles per hour. `;
+        
+        // Add daily forecasts for next 4-5 days
+        const days = Object.values(dailyForecasts).slice(0, 5);
+        
+        days.forEach((day, index) => {
+            const high = Math.round(Math.max(...day.temps));
+            const low = Math.round(Math.min(...day.temps));
+            const mostCommonCondition = day.conditions.sort((a,b) =>
+                day.conditions.filter(v => v===a).length - day.conditions.filter(v => v===b).length
+            ).pop();
+            
+            if (index === 0) {
+                weatherReport += `Today's high ${high}, low ${low}, expecting ${mostCommonCondition}. `;
+            } else if (index === 1) {
+                weatherReport += `Tomorrow, ${day.dayName}, high ${high}, low ${low}, ${mostCommonCondition}. `;
+            } else {
+                weatherReport += `${day.dayName}, high ${high}, low ${low}, ${mostCommonCondition}. `;
+            }
+        });
         
         console.log(`✅ Weather report generated for ${name}`);
         return weatherReport;
