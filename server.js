@@ -1251,7 +1251,7 @@ app.post('/webhook/select-channel', async (req, res) => {
     
     // Play the podcast
     gather.play({ loop: 1 }, playUrl);
-    gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to restart episode, 6 to skip episode, or 0 for menu.');
+    gather.say(VOICE_CONFIG, VOICE_PROMPTS.podcasts.playbackControls);
     
     // Fallback to continue current episode after timeout
     twiml.redirect(`/webhook/playback-control?channel=${digits}&episodeIndex=0`);
@@ -1456,12 +1456,8 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
     
     if (audioResponse.headers['content-length']) {
       const contentLength = parseInt(audioResponse.headers['content-length']);
-      // For very large files (>100MB), don't set Content-Length to avoid Twilio timeouts
-      if (contentLength < 100000000) {
-        res.setHeader('Content-Length', contentLength);
-      } else {
-        console.log(`⚠️ Large file (${Math.round(contentLength/1024/1024)}MB), streaming without Content-Length for Twilio compatibility`);
-      }
+      res.setHeader('Content-Length', contentLength);
+      console.log(`📊 Streaming ${Math.round(contentLength/1024/1024)}MB file with Content-Length header`);
     }
     
     if (audioResponse.headers['content-range']) {
@@ -1525,11 +1521,8 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
           
           if (fallbackResponse.headers['content-length']) {
             const contentLength = parseInt(fallbackResponse.headers['content-length']);
-            if (contentLength < 100000000) {
-              res.setHeader('Content-Length', contentLength);
-            } else {
-              console.log(`⚠️ Large fallback file (${Math.round(contentLength/1024/1024)}MB), streaming without Content-Length`);
-            }
+            res.setHeader('Content-Length', contentLength);
+            console.log(`📊 Fallback streaming ${Math.round(contentLength/1024/1024)}MB file with Content-Length header`);
           }
           
           fallbackResponse.data.pipe(res);
@@ -2065,7 +2058,7 @@ app.all('/webhook/episode-finished', async (req, res) => {
       });
       
       gather.play({ loop: 1 }, playUrl);
-      gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to restart episode, 6 to skip episode, or 0 for menu.');
+      gather.say(VOICE_CONFIG, VOICE_PROMPTS.podcasts.playbackControls);
       
       // Fallback to continue next episode
       twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${nextEpisodeIndex}`);
