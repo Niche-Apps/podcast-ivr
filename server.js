@@ -28,18 +28,37 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Initialize Twilio client (only if credentials are provided)
-let twilioClient;
-if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+// Initialize voice client (Twilio or SignalWire)
+let voiceClient;
+let voiceProvider = 'demo';
+
+if (process.env.SIGNALWIRE_PROJECT_ID && process.env.SIGNALWIRE_AUTH_TOKEN && process.env.SIGNALWIRE_SPACE_URL) {
+  // SignalWire configuration
   try {
-    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    voiceClient = twilio(process.env.SIGNALWIRE_PROJECT_ID, process.env.SIGNALWIRE_AUTH_TOKEN, {
+      accountSid: process.env.SIGNALWIRE_PROJECT_ID,
+      edge: process.env.SIGNALWIRE_SPACE_URL.replace('https://', '').replace('.signalwire.com', '')
+    });
+    voiceProvider = 'signalwire';
+    console.log('✅ SignalWire client initialized');
+  } catch (error) {
+    console.warn('⚠️ SignalWire client initialization failed:', error.message);
+  }
+} else if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  // Twilio configuration (fallback)
+  try {
+    voiceClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    voiceProvider = 'twilio';
     console.log('✅ Twilio client initialized');
   } catch (error) {
     console.warn('⚠️ Twilio client initialization failed:', error.message);
   }
 } else {
-  console.warn('⚠️ Twilio credentials not provided - running in demo mode');
+  console.warn('⚠️ No voice provider credentials found - running in demo mode');
 }
+
+// Legacy variable for compatibility
+const twilioClient = voiceClient;
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -81,9 +100,12 @@ async function fetchPodcastEpisodes(rssUrl) {
             const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/i) ||
                               item.match(/<title[^>]*>(.*?)<\/title>/i);
             
-            // Extract audio URL
+            // Extract audio URL and file size
             const enclosureMatch = item.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*/i) ||
                                   item.match(/<media:content[^>]+url=["']([^"']+)["'][^>]*/i);
+            
+            // Extract file size from enclosure length attribute
+            const lengthMatch = item.match(/<enclosure[^>]+length=["']([^"']+)["'][^>]*/i);
             
             if (titleMatch && enclosureMatch) {
                 const title = titleMatch[1]
@@ -103,10 +125,14 @@ async function fetchPodcastEpisodes(rssUrl) {
                     .replace(/&quot;/g, '"')
                     .replace(/&#39;/g, "'");
                 
+                // Extract file size if available
+                const fileSize = lengthMatch ? parseInt(lengthMatch[1]) : 0;
+                const fileSizeMB = Math.round(fileSize / 1024 / 1024);
+                
                 // Basic URL validation
                 if (audioUrl.startsWith('http') && title.length > 0) {
-                    episodes.push({ title, audioUrl });
-                    console.log(`✓ Episode: "${title.substring(0, 50)}..."`);
+                    episodes.push({ title, audioUrl, fileSize, fileSizeMB });
+                    console.log(`✓ Episode: "${title.substring(0, 50)}..." (${fileSizeMB}MB)`);
                 }
             }
         }
@@ -436,14 +462,15 @@ function getPrompt(category, key, variables = {}) {
 // Health check endpoint
 app.get('/', (req, res) => {
   res.status(200).json({ 
-    status: 'Twilio Podcast IVR Server Running',
+    status: 'Voice Podcast IVR Server Running',
     service: 'operational',
     timestamp: new Date().toISOString(),
     platform: 'Railway',
-    twilioEnabled: !!twilioClient,
+    voiceProvider: voiceProvider,
+    voiceEnabled: !!voiceClient,
     podcasts: Object.keys(ALL_PODCASTS).length,
     features: [
-      'Twilio integration',
+      `${voiceProvider === 'signalwire' ? 'SignalWire' : 'Twilio'} integration`,
       'Call tracking & ad revenue',
       'Audio content pipeline', 
       'Automated podcast updates',
@@ -1001,9 +1028,9 @@ async function startServer() {
     
     // Start Express server
     app.listen(port, () => {
-      console.log('\n🎉 TWILIO PODCAST IVR SYSTEM OPERATIONAL!');
+      console.log(`\n🎉 ${voiceProvider.toUpperCase()} PODCAST IVR SYSTEM OPERATIONAL!`);
       console.log(`🌐 Server running on port ${port}`);
-      console.log('📞 Twilio Integration: READY');
+      console.log(`📞 ${voiceProvider === 'signalwire' ? 'SignalWire' : 'Twilio'} Integration: READY`);
       console.log('🎧 Audio pipeline: ACTIVE');
       console.log('💰 Ad tracking: ENABLED');
       console.log('\n📊 Available endpoints:');
@@ -1795,8 +1822,17 @@ app.all('/webhook/play-episode', async (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
     
-    console.log(`📻 Episode found: "${episode.title}"`);
+    console.log(`📻 Episode found: "${episode.title}" (${episode.fileSizeMB || 'unknown'}MB)`);
     console.log(`🔗 Raw audio URL: ${episode.audioUrl.substring(0, 100)}...`);
+    
+    // Check for very large files (only apply restriction for Twilio)
+    if (voiceProvider === 'twilio' && episode.fileSizeMB && episode.fileSizeMB > 150) {
+      console.log(`⚠️ Large file detected (${episode.fileSizeMB}MB), may cause Twilio playback issues`);
+      twiml.say(VOICE_CONFIG, `This episode "${episode.title.substring(0, 60)}" is very long at ${Math.round((episode.fileSize || 0) / 1024 / 1024)} megabytes. The phone system may have difficulty playing such large files. Please try NPR option 2 for reliable streaming, or try a different podcast.`);
+      twiml.say(VOICE_CONFIG, 'Returning to main menu.');
+      twiml.redirect('/webhook/ivr-main');
+      return res.type('text/xml').send(twiml.toString());
+    }
     
     // Clean the URL with additional safety checks
     let finalAudioUrl;
@@ -1833,7 +1869,7 @@ app.all('/webhook/play-episode', async (req, res) => {
     console.log(`🚀 Playing episode from: ${finalAudioUrl.split('/')[2]}`);
     gather.play({ loop: 1 }, proxyUrl);
     
-    twiml.say(VOICE_CONFIG, `Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, or 0 for main menu.`);
+    gather.say(VOICE_CONFIG, VOICE_PROMPTS.podcasts.playbackControls);
     
     // Continue current episode after timeout
     twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=0`);
