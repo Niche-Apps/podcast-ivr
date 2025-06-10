@@ -1445,13 +1445,23 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
       console.log(`⚠️ Range request ignored by CDN, got full content instead of partial`);
     }
     
-    // Set headers for streaming
+    // Set headers for streaming - optimized for Twilio compatibility
     res.setHeader('Content-Type', audioResponse.headers['content-type'] || 'audio/mpeg');
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     
+    // Add Twilio-friendly headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Connection', 'keep-alive');
+    
     if (audioResponse.headers['content-length']) {
-      res.setHeader('Content-Length', audioResponse.headers['content-length']);
+      const contentLength = parseInt(audioResponse.headers['content-length']);
+      // For very large files (>100MB), don't set Content-Length to avoid Twilio timeouts
+      if (contentLength < 100000000) {
+        res.setHeader('Content-Length', contentLength);
+      } else {
+        console.log(`⚠️ Large file (${Math.round(contentLength/1024/1024)}MB), streaming without Content-Length for Twilio compatibility`);
+      }
     }
     
     if (audioResponse.headers['content-range']) {
@@ -1510,6 +1520,18 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
           res.setHeader('Content-Type', fallbackResponse.headers['content-type'] || 'audio/mpeg');
           res.setHeader('Accept-Ranges', 'bytes');
           res.setHeader('Cache-Control', 'public, max-age=3600');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Connection', 'keep-alive');
+          
+          if (fallbackResponse.headers['content-length']) {
+            const contentLength = parseInt(fallbackResponse.headers['content-length']);
+            if (contentLength < 100000000) {
+              res.setHeader('Content-Length', contentLength);
+            } else {
+              console.log(`⚠️ Large fallback file (${Math.round(contentLength/1024/1024)}MB), streaming without Content-Length`);
+            }
+          }
+          
           fallbackResponse.data.pipe(res);
           console.log(`✅ Fallback stream started without range`);
         }
