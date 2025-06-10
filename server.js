@@ -71,8 +71,8 @@ const adSystem = new AdSystem();
 const analytics = new CallerAnalytics();
 
 // Simplified RSS fetching function
-async function fetchPodcastEpisodes(rssUrl) {
-    console.log(`🔍 Fetching episodes from: ${rssUrl}`);
+async function fetchPodcastEpisodes(rssUrl, startIndex = 0, maxCount = 10) {
+    console.log(`🔍 Fetching episodes from: ${rssUrl} (start: ${startIndex}, max: ${maxCount})`);
     
     try {
         const response = await axios.get(rssUrl, {
@@ -93,8 +93,9 @@ async function fetchPodcastEpisodes(rssUrl) {
         const itemMatches = xmlText.match(/<item[\s\S]*?<\/item>/gi) || [];
         console.log(`📄 Found ${itemMatches.length} episodes in feed`);
         
-        // Process first 5 episodes for faster response
-        for (let i = 0; i < Math.min(itemMatches.length, 5); i++) {
+        // Process episodes based on startIndex and maxCount parameters
+        const endIndex = Math.min(startIndex + maxCount, itemMatches.length);
+        for (let i = startIndex; i < endIndex; i++) {
             const item = itemMatches[i];
             
             // Extract title
@@ -1418,7 +1419,7 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
         const headResponse = await axios({
           method: 'HEAD',
           url: originalUrl,
-          timeout: 8000, // Increased timeout for Libsyn redirects
+          timeout: 20000, // Extended timeout for complex Libsyn redirect chains
           maxRedirects: 5, // Increased for Libsyn redirect chains
           headers: headers,
           validateStatus: function (status) {
@@ -1458,7 +1459,7 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
       method: 'GET',
       url: originalUrl,
       responseType: 'stream',
-      timeout: 30000,
+      timeout: 45000, // Extended timeout for complex URLs like TimCast
       maxRedirects: 5, // Increased for Libsyn redirect chains
       headers: headers,
       validateStatus: function (status) {
@@ -1532,7 +1533,7 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
           method: 'GET',
           url: originalUrl,
           responseType: 'stream',
-          timeout: 15000,
+          timeout: 30000, // Extended timeout for fallback requests
           maxRedirects: 5, // Increased for Libsyn redirect chains
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
@@ -1801,7 +1802,13 @@ app.all('/webhook/play-episode', async (req, res) => {
   
   try {
     console.log(`🔍 Fetching episodes from: ${podcast.rssUrl}`);
-    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    let episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    
+    // If requesting an episode beyond our initial fetch, get more episodes
+    if (!episodes[episodeIndex] && episodeIndex >= 8) {
+      console.log(`🔄 Episode ${episodeIndex} not in initial fetch, loading more episodes...`);
+      episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, Math.max(20, episodeIndex + 5));
+    }
     
     if (!episodes || episodes.length === 0) {
       console.log(`❌ No episodes found for ${podcast.name}`);
@@ -2071,9 +2078,15 @@ app.all('/webhook/episode-finished', async (req, res) => {
   }
   
   try {
-    // Fetch episodes to get the next one
-    const episodes = await fetchPodcastEpisodes(podcast.rssUrl);
+    // Fetch episodes to get the next one, with dynamic loading if needed
+    let episodes = await fetchPodcastEpisodes(podcast.rssUrl);
     const nextEpisodeIndex = episodeIndex + 1;
+    
+    // If we don't have enough episodes and we're near the end, fetch more
+    if (!episodes[nextEpisodeIndex] && nextEpisodeIndex >= 8) {
+      console.log(`🔄 Need more episodes for index ${nextEpisodeIndex}, fetching more...`);
+      episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 20); // Fetch 20 total
+    }
     
     if (episodes && episodes[nextEpisodeIndex]) {
       console.log(`🔄 Auto-advancing to next episode: ${nextEpisodeIndex}`);
