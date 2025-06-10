@@ -55,6 +55,7 @@ if (process.env.SIGNALWIRE_PROJECT_ID && process.env.SIGNALWIRE_AUTH_TOKEN && pr
   }
 } else {
   console.warn('⚠️ No voice provider credentials found - running in demo mode');
+  console.warn('   Looking for SIGNALWIRE_* or TWILIO_* environment variables');
 }
 
 // Legacy variable for compatibility
