@@ -335,6 +335,25 @@ function cleanAudioUrl(url) {
             console.log(`✅ URL cleaned successfully: ${cleaned.substring(0, 80)}...`);
         }
         
+        // URL sanitization for problematic characters and encoding
+        try {
+            // Parse URL to handle encoding properly
+            const urlObj = new URL(cleaned);
+            
+            // Encode path components that might have problematic characters
+            const pathParts = urlObj.pathname.split('/');
+            urlObj.pathname = pathParts.map((part, index) => {
+                if (index === 0) return part; // Keep leading slash
+                // Encode each path segment but preserve basic URL characters
+                return encodeURIComponent(decodeURIComponent(part));
+            }).join('/');
+            
+            cleaned = urlObj.toString();
+            console.log(`🔧 URL sanitized for compatibility: ${cleaned.substring(0, 80)}...`);
+        } catch (urlError) {
+            console.log(`⚠️ URL sanitization skipped (not a valid URL): ${urlError.message}`);
+        }
+        
         return cleaned;
         
     } catch (error) {
@@ -1524,6 +1543,11 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
       console.error(`🔗 Connection failed to: ${originalUrl.substring(0, 100)}...`);
       if (!res.headersSent) {
         res.status(503).send('Audio source temporarily unavailable');
+      }
+    } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      console.error(`⏰ Request timed out for URL: ${originalUrl.substring(0, 100)}...`);
+      if (!res.headersSent) {
+        res.status(408).send('Audio request timed out - this episode may have connectivity issues');
       }
     } else if (error.response && (error.response.status === 416 || error.response.status === 400)) {
       console.error(`📍 Range request failed (${error.response.status}), trying without range`);
