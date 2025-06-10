@@ -1390,8 +1390,8 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
         const headResponse = await axios({
           method: 'HEAD',
           url: originalUrl,
-          timeout: 5000, // Shorter timeout for faster response
-          maxRedirects: 2,
+          timeout: 8000, // Increased timeout for Libsyn redirects
+          maxRedirects: 5, // Increased for Libsyn redirect chains
           headers: headers,
           validateStatus: function (status) {
             return status >= 200 && status < 400; // Accept 2xx and 3xx
@@ -1431,7 +1431,7 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
       url: originalUrl,
       responseType: 'stream',
       timeout: 30000,
-      maxRedirects: 2,
+      maxRedirects: 5, // Increased for Libsyn redirect chains
       headers: headers,
       validateStatus: function (status) {
         return status >= 200 && status < 400; // Accept 2xx and 3xx
@@ -1499,7 +1499,7 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
           url: originalUrl,
           responseType: 'stream',
           timeout: 15000,
-          maxRedirects: 2,
+          maxRedirects: 5, // Increased for Libsyn redirect chains
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
             'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
