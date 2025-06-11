@@ -1,3 +1,38 @@
 node_modules/
 .env
 *.log
+
+# Development and debug files
+server-debug.js
+gui-debug.log
+test-*.js
+channel-test-results.json
+
+# Build artifacts and distributions
+gui/dist/
+gui/node_modules/
+launcher-app/dist/
+launcher-app/node_modules/
+
+# Audio files (too large for git/railway)
+generated_audio/
+podcast_audio/
+
+# Backup and temporary files
+package_temp.json
+exemptions-backup.txt
+*.backup
+*.temp
+
+# Documentation that's not needed in production
+AUDIO_GENERATION_GUIDE.md
+DEPLOYMENT_STATUS.md
+RAILWAY_STATUS.md
+TWILIO_SETUP.md
+
+# CSV reports and data exports
+*.csv
+ad-exemptions-report.csv
+
+# Example and template files
+vip-numbers-example.txt
