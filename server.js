@@ -1130,12 +1130,6 @@ app.post('/webhook/select-channel', async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
   
-  if (!ALL_PODCASTS[digits]) {
-    twiml.say(VOICE_CONFIG, getPrompt('mainMenu', 'invalidSelection'));
-    twiml.redirect('/webhook/ivr-main');
-    return res.type('text/xml').send(twiml.toString());
-  }
-  
   let selectedPodcast = ALL_PODCASTS[digits] || EXTENSION_PODCASTS[digits];
   
   if (!selectedPodcast) {
