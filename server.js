@@ -2628,7 +2628,7 @@ app.all('/webhook/play-debate', async (req, res) => {
     }
     
     const selectedDebate = debates[selectedIndex];
-    console.log(`🎬 Playing debate: ${selectedDebate.title}`);
+    console.log(`🎬 Playing debate: ${selectedDebate.title || selectedDebate.description}`);
     
     // Check if this is a direct audio URL or still a YouTube URL
     const isDirectAudio = selectedDebate.url && !selectedDebate.url.includes('youtube.com') && !selectedDebate.url.includes('youtu.be');
