@@ -141,6 +141,11 @@
       "name": "Dennis Prager Show",
       "rssUrl": "https://feeds.megaphone.fm/WWO3519750118",
       "description": "Conservative wisdom and values"
+    },
+    "50": {
+      "name": "Debates",
+      "rssUrl": "YOUTUBE_DEBATES",
+      "description": "Political and policy debates from YouTube"
     }
   },
   "testing": {

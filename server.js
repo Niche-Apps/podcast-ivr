@@ -1136,7 +1136,15 @@ app.post('/webhook/select-channel', async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
   
-  const selectedPodcast = ALL_PODCASTS[digits];
+  let selectedPodcast = ALL_PODCASTS[digits] || EXTENSION_PODCASTS[digits];
+  
+  if (!selectedPodcast) {
+    console.log(`❌ No podcast found for channel ${digits}`);
+    twiml.say(VOICE_CONFIG, getPrompt('mainMenu', 'invalidSelection'));
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
   console.log(`Selected: ${selectedPodcast.name}`);
   
   // Track selection
@@ -1171,6 +1179,51 @@ app.post('/webhook/select-channel', async (req, res) => {
       twiml.redirect('/webhook/ivr-main');
       res.type('text/xml');
       return res.send(twiml.toString());
+    }
+    
+    // Handle YouTube debates
+    if (selectedPodcast.rssUrl === 'YOUTUBE_DEBATES') {
+      console.log(`🎬 Loading YouTube debates from debates-urls.json`);
+      
+      try {
+        const debatesData = JSON.parse(fs.readFileSync('./debates-urls.json', 'utf8'));
+        const debates = debatesData.debates || [];
+        
+        if (debates.length === 0) {
+          twiml.say(VOICE_CONFIG, 'No debates are currently available. Please try again later.');
+          twiml.redirect('/webhook/ivr-main');
+          res.type('text/xml');
+          return res.send(twiml.toString());
+        }
+        
+        twiml.say(VOICE_CONFIG, `Welcome to Debates. ${debates.length} debates available.`);
+        
+        // List first few debates
+        debates.slice(0, 3).forEach((debate, index) => {
+          twiml.say(VOICE_CONFIG, `Option ${index + 1}: ${debate.title}.`);
+        });
+        
+        const gather = twiml.gather({
+          numDigits: 1,
+          timeout: 10,
+          action: `/webhook/play-debate`,
+          method: 'POST'
+        });
+        
+        gather.say(VOICE_CONFIG, 'Press a number to select a debate, or press star to return to main menu.');
+        
+        twiml.say(VOICE_CONFIG, getPrompt('errors', 'invalidInput'));
+        twiml.redirect('/webhook/ivr-main');
+        res.type('text/xml');
+        return res.send(twiml.toString());
+        
+      } catch (error) {
+        console.error('❌ Error loading debates:', error);
+        twiml.say(VOICE_CONFIG, 'Sorry, debates are temporarily unavailable.');
+        twiml.redirect('/webhook/ivr-main');
+        res.type('text/xml');
+        return res.send(twiml.toString());
+      }
     }
 
     // Handle feedback service
@@ -2545,6 +2598,80 @@ app.get('/api/test-ad/:adId', (req, res) => {
   
   const twiml = new VoiceResponse();
   twiml.say(VOICE_CONFIG, message);
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Handle YouTube debates playback
+app.all('/webhook/play-debate', async (req, res) => {
+  const digits = req.body.Digits;
+  const twiml = new VoiceResponse();
+  
+  console.log(`🎬 Debate selection: ${digits}`);
+  
+  // Handle return to main menu
+  if (digits === '*') {
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  try {
+    const debatesData = JSON.parse(fs.readFileSync('./debates-urls.json', 'utf8'));
+    const debates = debatesData.debates || [];
+    const selectedIndex = parseInt(digits) - 1;
+    
+    if (selectedIndex < 0 || selectedIndex >= debates.length) {
+      twiml.say(VOICE_CONFIG, 'Invalid selection. Please try again.');
+      twiml.redirect('/webhook/select-channel?digits=50');
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    const selectedDebate = debates[selectedIndex];
+    console.log(`🎬 Playing debate: ${selectedDebate.title}`);
+    
+    // Note: YouTube URLs can't be played directly through Twilio
+    // This is a placeholder - you'd need to convert YouTube to audio first
+    twiml.say(VOICE_CONFIG, `You selected ${selectedDebate.title}. ${selectedDebate.description}. Unfortunately, YouTube content cannot be played directly through phone calls. Please visit the YouTube link to watch this debate.`);
+    
+    // Add playback controls
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 10,
+      action: '/webhook/debate-controls',
+      method: 'POST'
+    });
+    
+    gather.say(VOICE_CONFIG, 'Press 1 to hear another debate, or star to return to main menu.');
+    
+    twiml.say(VOICE_CONFIG, 'No input received.');
+    twiml.redirect('/webhook/ivr-main');
+    
+  } catch (error) {
+    console.error('❌ Error playing debate:', error);
+    twiml.say(VOICE_CONFIG, 'Sorry, there was an error playing the debate.');
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Handle debate playback controls
+app.all('/webhook/debate-controls', async (req, res) => {
+  const digits = req.body.Digits;
+  const twiml = new VoiceResponse();
+  
+  if (digits === '1') {
+    // Return to debate selection
+    twiml.redirect('/webhook/select-channel?digits=50');
+  } else if (digits === '*') {
+    // Return to main menu
+    twiml.redirect('/webhook/ivr-main');
+  } else {
+    twiml.say(VOICE_CONFIG, 'Invalid option.');
+    twiml.redirect('/webhook/ivr-main');
+  }
   
   res.type('text/xml');
   res.send(twiml.toString());
