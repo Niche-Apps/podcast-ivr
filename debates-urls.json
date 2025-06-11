@@ -1,10 +1,10 @@
 {
   "_instructions": {
     "note": "Extension 50 - Debates Channel",
-    "description": "This file contains debates",
+    "description": "This file contains debates with direct audio URLs",
     "usage": "Users can dial extension 50 to access this content",
-    "limitation": "YouTube videos cannot be played directly through phone calls - users will be informed to visit the YouTube links",
-    "future": "Consider converting YouTube content to audio format for phone playback"
+    "limitation": "YouTube URLs cannot be played directly, but direct audio URLs will play automatically",
+    "supported_formats": "Direct audio URLs (mp3, wav, webm audio), Google Video audio extracts"
   },
   "debates": [
     {

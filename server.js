@@ -2630,22 +2630,46 @@ app.all('/webhook/play-debate', async (req, res) => {
     const selectedDebate = debates[selectedIndex];
     console.log(`🎬 Playing debate: ${selectedDebate.title}`);
     
-    // Note: YouTube URLs can't be played directly through Twilio
-    // This is a placeholder - you'd need to convert YouTube to audio first
-    twiml.say(VOICE_CONFIG, `You selected ${selectedDebate.title}. ${selectedDebate.description}. Unfortunately, YouTube content cannot be played directly through phone calls. Please visit the YouTube link to watch this debate.`);
+    // Check if this is a direct audio URL or still a YouTube URL
+    const isDirectAudio = selectedDebate.url && !selectedDebate.url.includes('youtube.com') && !selectedDebate.url.includes('youtu.be');
     
-    // Add playback controls
-    const gather = twiml.gather({
-      numDigits: 1,
-      timeout: 10,
-      action: '/webhook/debate-controls',
-      method: 'POST'
-    });
-    
-    gather.say(VOICE_CONFIG, 'Press 1 to hear another debate, or star to return to main menu.');
-    
-    twiml.say(VOICE_CONFIG, 'No input received.');
-    twiml.redirect('/webhook/ivr-main');
+    if (isDirectAudio) {
+      // Play the audio directly
+      const title = selectedDebate.title || selectedDebate.description || 'Selected debate';
+      twiml.say(VOICE_CONFIG, `Now playing: ${title}`);
+      
+      // Play the audio file
+      twiml.play(selectedDebate.url);
+      
+      // Add playback controls after the audio
+      const gather = twiml.gather({
+        numDigits: 1,
+        timeout: 10,
+        action: '/webhook/debate-controls',
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press 1 to hear another debate, or star to return to main menu.');
+      
+      twiml.say(VOICE_CONFIG, 'No input received.');
+      twiml.redirect('/webhook/ivr-main');
+    } else {
+      // Still a YouTube URL that can't be played directly
+      twiml.say(VOICE_CONFIG, `You selected ${selectedDebate.title}. ${selectedDebate.description}. Unfortunately, YouTube content cannot be played directly through phone calls. Please visit the YouTube link to watch this debate.`);
+      
+      // Add playback controls
+      const gather = twiml.gather({
+        numDigits: 1,
+        timeout: 10,
+        action: '/webhook/debate-controls',
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press 1 to hear another debate, or star to return to main menu.');
+      
+      twiml.say(VOICE_CONFIG, 'No input received.');
+      twiml.redirect('/webhook/ivr-main');
+    }
     
   } catch (error) {
     console.error('❌ Error playing debate:', error);
