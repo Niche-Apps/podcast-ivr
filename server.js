@@ -1209,12 +1209,19 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         console.log(`🔍 Scanning for MP3 files in sync.com folder...`);
         
+        // Test a smaller set of most common patterns first
+        const quickPatterns = ['1.mp3', '2.mp3', '3.mp3', 'debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        
+        console.log(`🔍 Quick scan for common files: ${quickPatterns.join(', ')}`);
+        
         // Test each potential filename to see if it exists
-        for (const filename of commonPatterns) {
+        for (const filename of quickPatterns) {
           try {
-            const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/${filename}?key=teq5fmt7-aktqvy7h-27qrby4k-jevmstab`;
+            const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${filename}`;
+            console.log(`🔍 Testing: ${filename}`);
+            
             const response = await axios.head(testUrl, { 
-              timeout: 3000,
+              timeout: 2000, // Reduced timeout
               validateStatus: function (status) {
                 return status === 200; // Only accept 200 as success
               }
@@ -1223,15 +1230,42 @@ app.post('/webhook/select-channel', async (req, res) => {
             if (response.status === 200) {
               console.log(`✅ Found MP3: ${filename}`);
               fileList.push(filename);
-              
-              // Stop after finding 10 files to avoid too many requests
-              if (fileList.length >= 10) {
-                console.log(`📂 Found ${fileList.length} files, stopping scan to avoid rate limits`);
-                break;
-              }
             }
           } catch (error) {
-            // File doesn't exist or network error - just continue silently
+            console.log(`❌ Not found or error: ${filename} - ${error.message}`);
+          }
+        }
+        
+        console.log(`📂 After quick scan, found ${fileList.length} files: ${fileList.join(', ')}`);
+        
+        // If we found some files, continue with full scan for more
+        if (fileList.length > 0 && fileList.length < 5) {
+          console.log(`🔍 Found some files, doing extended scan...`);
+          for (const filename of commonPatterns) {
+            if (quickPatterns.includes(filename)) continue; // Skip already tested
+            
+            try {
+              const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${filename}`;
+              const response = await axios.head(testUrl, { 
+                timeout: 2000,
+                validateStatus: function (status) {
+                  return status === 200;
+                }
+              });
+              
+              if (response.status === 200) {
+                console.log(`✅ Found additional MP3: ${filename}`);
+                fileList.push(filename);
+                
+                // Stop after finding 10 files total
+                if (fileList.length >= 10) {
+                  console.log(`📂 Found ${fileList.length} files, stopping scan`);
+                  break;
+                }
+              }
+            } catch (error) {
+              // Continue silently
+            }
           }
         }
         
@@ -1252,7 +1286,7 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         // Start playing the first file immediately with podcast-style controls
         const firstFile = fileList[0];
-        const firstFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/${firstFile}?key=teq5fmt7-aktqvy7h-27qrby4k-jevmstab`;
+        const firstFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${firstFile}`;
         const filename = firstFile.replace('.mp3', '').replace(/[-_]/g, ' ');
         
         console.log(`🎵 Auto-playing first file: ${firstFile}`);
@@ -2779,7 +2813,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
     // Test each potential filename to see if it exists
     for (const filename of commonPatterns) {
       try {
-        const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/${filename}?key=teq5fmt7-aktqvy7h-27qrby4k-jevmstab`;
+        const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${filename}`;
         const response = await axios.head(testUrl, { 
           timeout: 3000,
           validateStatus: function (status) {
@@ -2809,7 +2843,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
       // Next file
       const nextIndex = (currentIndex + 1) % fileList.length;
       const nextFile = fileList[nextIndex];
-      const nextFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/${nextFile}?key=teq5fmt7-aktqvy7h-27qrby4k-jevmstab`;
+      const nextFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${nextFile}`;
       const filename = nextFile.replace('.mp3', '').replace(/[-_]/g, ' ');
       
       console.log(`⏭️ Playing next file: ${nextFile} (index ${nextIndex})`);
@@ -2831,7 +2865,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
       // Previous file
       const prevIndex = currentIndex > 0 ? currentIndex - 1 : fileList.length - 1;
       const prevFile = fileList[prevIndex];
-      const prevFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/${prevFile}?key=teq5fmt7-aktqvy7h-27qrby4k-jevmstab`;
+      const prevFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${prevFile}`;
       const filename = prevFile.replace('.mp3', '').replace(/[-_]/g, ' ');
       
       console.log(`⏮️ Playing previous file: ${prevFile} (index ${prevIndex})`);
@@ -2855,7 +2889,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
     } else {
       // Invalid input - replay current file
       const currentFile = fileList[currentIndex];
-      const currentFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/${currentFile}?key=teq5fmt7-aktqvy7h-27qrby4k-jevmstab`;
+      const currentFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${currentFile}`;
       
       twiml.say(VOICE_CONFIG, 'Invalid option. Replaying current file.');
       twiml.play(currentFileUrl);
