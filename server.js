@@ -2650,10 +2650,15 @@ app.all('/webhook/play-debate', async (req, res) => {
       
       twiml.say(VOICE_CONFIG, `Now playing: ${title}`);
       
-      // SignalWire supports MP3, WAV, and some other formats
+      // SignalWire supports MP3, WAV, M4A, AAC, OGG
       // WebM might not be supported, so let's add a warning
       if (selectedDebate.url.includes('mime=audio%2Fwebm')) {
         console.log(`⚠️ WebM audio format detected - may not be compatible with SignalWire`);
+        console.log(`💡 Suggestion: Try converting to M4A, AAC, or MP3 format for better SignalWire compatibility`);
+      } else if (selectedDebate.url.includes('mime=audio%2Fmp4') || selectedDebate.url.includes('.m4a') || selectedDebate.url.includes('.aac')) {
+        console.log(`✅ M4A/AAC format detected - should be compatible with SignalWire`);
+      } else if (selectedDebate.url.includes('mime=audio%2Fmpeg') || selectedDebate.url.includes('.mp3')) {
+        console.log(`✅ MP3 format detected - should be compatible with SignalWire`);
       }
       
       // Add error handling for audio playback

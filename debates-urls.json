@@ -9,7 +9,7 @@
   "debates": [
     {
       "id": 1,
-      "title": "",
+      "title": "Jimmy Aiken versus James White",
       "description": "Jimmy Aiken versus James White",
       "url": "https://rr2---sn-a5msenl7.googlevideo.com/videoplayback?ip=2a0e%3Ad785%3A4001%3A16bb%3A5658%3A5bda%3Acaee%3Af85b&id=o-AO1YoR2cNFzaQcmRsjVsqhh4OupSsSjMyPkfJFjRKTvS&itag=251&source=youtube&requiressl=yes&mm=31%2C26&mn=sn-a5msenl7%2Csn-hxa7zn7s&ms=au%2Conr&mv=m&mvi=2&pl=48&initcwndbps=2288750&vprv=1&svpuc=1&mime=audio%2Fwebm&dur=8004.261&lmt=1741383931718357&mt=1749727980&fvip=1&c=TVHTML5&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cxpc%2Cpcm2%2Cbui%2Cvprv%2Csvpuc%2Cmime%2Cns%2Crqh%2Cgir%2Cclen%2Cdur%2Clmt&sig=AJfQdSswRgIhAMTQ18aXuxZUG1xyhnalJpI7zzqa_YeCImcKBZCJsZZfAiEA3Wj2rLK17Q30mvjk-TwkmZ5NIrDVswhxiQagXVb3HK4%3D&lsparams=met%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps&lsig=APaTxxMwRQIhAM6_-vFFZPP0nhGz-J2ZbBqNBXl4zCEvkiC86ogTQMPuAiAobGMTWO6t4AEuSmIOzVZGwFi5V5BDu01eggY0pjpTZA%3D%3D",
       "duration": "",
@@ -18,30 +18,30 @@
     },
     {
       "id": 2,
-      "title": "Economic Policy Debate", 
-      "description": "Experts discuss inflation and economic recovery",
-      "url": "https://www.youtube.com/watch?v=example2",
-      "duration": "60 minutes",
-      "date": "2024-01-10",
-      "category": "economic"
+      "title": "Walter Martin versus Ed Dekker", 
+      "description": "Walter Martin versus Ed Dekker",
+      "url": "https://rr5---sn-a5mekndl.googlevideo.com/videoplayback?ip=2a0e%3Ad785%3A4001%3A16bb%3A5658%3A5bda%3Acaee%3Af85b&id=o-ACRY4vnxwTbsrRxESfoxOn3HrjHHQBs6o8X_Wp4-Gj5y&itag=140&source=youtube&requiressl=yes&mm=31%2C26&mn=sn-a5mekndl%2Csn-hxa7zn7z&ms=au%2Conr&mv=m&mvi=5&pl=48&initcwndbps=1833750&vprv=1&svpuc=1&mime=audio%2Fmp4&dur=7071.613&lmt=1735805519810343&mt=1749728694&fvip=1&c=TVHTML5&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cxpc%2Cbui%2Cvprv%2Csvpuc%2Cmime%2Cns%2Crqh%2Cgir%2Cclen%2Cdur%2Clmt&sig=AJfQdSswRAIgCCPZ-1aAvV-Ehb9U1h6VXjLfDwnITFRYU1NGesvtWEYCIERBQDcIDxQEEJuDyxYKHL9EIwH5uh_D45LZx7ydaZ6O&lsparams=met%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps&lsig=APaTxxMwRQIgZeyV7eFqRg7uvvzw6DgEUrTBQ-ua8FRqYvrKC_1cSI0CIQChlpLxsQTJrLABrRzry9Te1KmSMJGGOwiyuSWZ3xVigQ%3D%3D",
+      "duration": "",
+      "date": "",
+      "category": ""
     },
     {
       "id": 3,
-      "title": "Healthcare Reform Debate",
-      "description": "Policy makers debate healthcare solutions",
-      "url": "https://www.youtube.com/watch?v=example3", 
-      "duration": "75 minutes",
-      "date": "2024-01-05",
-      "category": "healthcare"
+      "title": "",
+      "description": "",
+      "url": "", 
+      "duration": "",
+      "date": "",
+      "category": ""
     },
     {
       "id": 4,
-      "title": "Climate Policy Debate",
-      "description": "Environmental scientists and policy experts",
-      "url": "https://www.youtube.com/watch?v=example4",
-      "duration": "45 minutes", 
-      "date": "2024-01-01",
-      "category": "environment"
+      "title": "",
+      "description": "",
+      "url": "",
+      "duration": "", 
+      "date": "",
+      "category": ""
     }
   ]
 }
