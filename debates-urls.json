@@ -27,12 +27,12 @@
     },
     {
       "id": 3,
-      "title": "",
-      "description": "",
-      "url": "", 
-      "duration": "",
-      "date": "",
-      "category": ""
+      "title": "Test Audio",
+      "description": "Simple MP3 test for SignalWire compatibility",
+      "url": "https://www.soundjay.com/misc/sounds/fail-buzzer-02.mp3", 
+      "duration": "3 seconds",
+      "date": "2024-01-01",
+      "category": "test"
     },
     {
       "id": 4,

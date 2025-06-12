@@ -1175,44 +1175,68 @@ app.post('/webhook/select-channel', async (req, res) => {
       return res.send(twiml.toString());
     }
     
-    // Handle YouTube debates
+    // Handle YouTube debates - now fetches MP3s from shared folder
     if (selectedPodcast.rssUrl === 'YOUTUBE_DEBATES') {
-      console.log(`🎬 Loading YouTube debates from debates-urls.json`);
+      console.log(`🎬 Loading debates from shared sync.com folder`);
       
       try {
-        const debatesData = JSON.parse(fs.readFileSync('./debates-urls.json', 'utf8'));
-        const debates = debatesData.debates || [];
+        // Fetch file list from sync.com shared folder
+        const syncFolderUrl = 'https://ln5.sync.com/4.0/dl/34fe51340#teq5fmt7-aktqvy7h-27qrby4k-jevmstab';
+        console.log(`📁 Fetching MP3 files from: ${syncFolderUrl}`);
         
-        if (debates.length === 0) {
-          twiml.say(VOICE_CONFIG, 'No debates are currently available. Please try again later.');
+        // Try to fetch the folder contents
+        let fileList = [];
+        try {
+          const response = await axios.get(syncFolderUrl, { timeout: 10000 });
+          // Parse the HTML to extract file names
+          const html = response.data;
+          const fileMatches = html.match(/href="[^"]*\.mp3"/gi) || [];
+          fileList = fileMatches.map(match => {
+            const filename = match.match(/href="([^"]*\.mp3)"/i)[1];
+            return filename.split('/').pop(); // Get just the filename
+          });
+        } catch (fetchError) {
+          console.log(`⚠️ Could not fetch file list dynamically: ${fetchError.message}`);
+          // Fallback to assuming some common filenames
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
+        
+        if (fileList.length === 0) {
+          twiml.say(VOICE_CONFIG, 'No MP3 files found in shared folder. Please check the folder contents.');
           twiml.redirect('/webhook/ivr-main');
           res.type('text/xml');
           return res.send(twiml.toString());
         }
         
-        twiml.say(VOICE_CONFIG, `Welcome to Debates. ${debates.length} debates available.`);
+        // Start playing the first file immediately with podcast-style controls
+        const firstFile = fileList[0];
+        const firstFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${firstFile}`;
+        const filename = firstFile.replace('.mp3', '').replace(/[-_]/g, ' ');
         
-        // List first few debates
-        debates.slice(0, 3).forEach((debate, index) => {
-          twiml.say(VOICE_CONFIG, `Option ${index + 1}: ${debate.title}.`);
-        });
+        console.log(`🎵 Auto-playing first file: ${firstFile}`);
         
+        twiml.say(VOICE_CONFIG, `Welcome to Debates. Playing: ${filename}. Use star-1 for next, star-2 for previous, or star-star to return to main menu.`);
+        
+        // Play the first MP3 file
+        twiml.play(firstFileUrl);
+        
+        // Add podcast-style navigation controls
         const gather = twiml.gather({
-          numDigits: 1,
-          timeout: 10,
-          action: `/webhook/play-debate`,
+          numDigits: 2,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=0&totalFiles=${fileList.length}`,
           method: 'POST'
         });
         
-        gather.say(VOICE_CONFIG, 'Press a number to select a debate, or press star to return to main menu.');
+        gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
         
-        twiml.say(VOICE_CONFIG, getPrompt('errors', 'invalidInput'));
+        twiml.say(VOICE_CONFIG, 'Returning to main menu.');
         twiml.redirect('/webhook/ivr-main');
         res.type('text/xml');
         return res.send(twiml.toString());
         
       } catch (error) {
-        console.error('❌ Error loading debates:', error);
+        console.error('❌ Error loading debates from shared folder:', error);
         twiml.say(VOICE_CONFIG, 'Sorry, debates are temporarily unavailable.');
         twiml.redirect('/webhook/ivr-main');
         res.type('text/xml');
@@ -2611,8 +2635,29 @@ app.all('/webhook/play-debate', async (req, res) => {
   }
   
   try {
-    const debatesData = JSON.parse(fs.readFileSync('./debates-urls.json', 'utf8'));
-    const debates = debatesData.debates || [];
+    // Use the same static debates list from sync.com folder
+    const staticDebates = [
+      {
+        id: 1,
+        title: 'Debate 1',
+        description: 'First available debate',
+        url: 'https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/debate1.mp3'
+      },
+      {
+        id: 2,
+        title: 'Debate 2', 
+        description: 'Second available debate',
+        url: 'https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/debate2.mp3'
+      },
+      {
+        id: 3,
+        title: 'Debate 3',
+        description: 'Third available debate', 
+        url: 'https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/debate3.mp3'
+      }
+    ];
+    
+    const debates = staticDebates;
     const selectedIndex = parseInt(digits) - 1;
     
     if (selectedIndex < 0 || selectedIndex >= debates.length) {
@@ -2622,86 +2667,29 @@ app.all('/webhook/play-debate', async (req, res) => {
     }
     
     const selectedDebate = debates[selectedIndex];
-    console.log(`🎬 Playing debate: ${selectedDebate.title || selectedDebate.description}`);
+    console.log(`🎬 Playing debate from sync.com: ${selectedDebate.title}`);
     
-    // Check if this is a direct audio URL or still a YouTube URL
-    const isDirectAudio = selectedDebate.url && !selectedDebate.url.includes('youtube.com') && !selectedDebate.url.includes('youtu.be');
+    // Play the MP3 directly from sync.com
+    const title = selectedDebate.title || selectedDebate.description || 'Selected debate';
+    console.log(`🎵 Playing MP3 from sync.com: ${selectedDebate.url}`);
     
-    if (isDirectAudio) {
-      // Play the audio directly
-      const title = selectedDebate.title || selectedDebate.description || 'Selected debate';
-      console.log(`🎵 Attempting to play audio URL: ${selectedDebate.url.substring(0, 100)}...`);
-      console.log(`🎵 Full URL length: ${selectedDebate.url.length} characters`);
-      
-      // Check if URL might be expired (basic check)
-      const urlObj = new URL(selectedDebate.url);
-      const expireParam = urlObj.searchParams.get('expire');
-      if (expireParam) {
-        const expireTime = parseInt(expireParam) * 1000; // Convert to milliseconds
-        const now = Date.now();
-        console.log(`🕐 URL expires: ${new Date(expireTime)}, Current time: ${new Date(now)}`);
-        if (now > expireTime) {
-          console.log(`⚠️ URL may have expired`);
-          twiml.say(VOICE_CONFIG, 'Sorry, this audio link has expired. Please try another debate or contact support.');
-          twiml.redirect('/webhook/select-channel?digits=50');
-          return res.type('text/xml').send(twiml.toString());
-        }
-      }
-      
-      twiml.say(VOICE_CONFIG, `Now playing: ${title}`);
-      
-      // SignalWire supports MP3, WAV, M4A, AAC, OGG
-      // WebM might not be supported, so let's add a warning
-      if (selectedDebate.url.includes('mime=audio%2Fwebm')) {
-        console.log(`⚠️ WebM audio format detected - may not be compatible with SignalWire`);
-        console.log(`💡 Suggestion: Try converting to M4A, AAC, or MP3 format for better SignalWire compatibility`);
-      } else if (selectedDebate.url.includes('mime=audio%2Fmp4') || selectedDebate.url.includes('.m4a') || selectedDebate.url.includes('.aac')) {
-        console.log(`✅ M4A/AAC format detected - should be compatible with SignalWire`);
-      } else if (selectedDebate.url.includes('mime=audio%2Fmpeg') || selectedDebate.url.includes('.mp3')) {
-        console.log(`✅ MP3 format detected - should be compatible with SignalWire`);
-      }
-      
-      // Add error handling for audio playback
-      try {
-        // Play the audio file with error handling
-        const play = twiml.play(selectedDebate.url);
-        console.log(`🎵 TwiML play element created successfully for SignalWire`);
-      } catch (playError) {
-        console.error(`❌ Error creating play element: ${playError.message}`);
-        twiml.say(VOICE_CONFIG, 'Sorry, there was an error playing this audio file. The format may not be supported by SignalWire.');
-        twiml.redirect('/webhook/select-channel?digits=50');
-        return res.type('text/xml').send(twiml.toString());
-      }
-      
-      // Add playback controls after the audio
-      const gather = twiml.gather({
-        numDigits: 1,
-        timeout: 10,
-        action: '/webhook/debate-controls',
-        method: 'POST'
-      });
-      
-      gather.say(VOICE_CONFIG, 'Press 1 to hear another debate, or star to return to main menu.');
-      
-      twiml.say(VOICE_CONFIG, 'No input received.');
-      twiml.redirect('/webhook/ivr-main');
-    } else {
-      // Still a YouTube URL that can't be played directly
-      twiml.say(VOICE_CONFIG, `You selected ${selectedDebate.title}. ${selectedDebate.description}. Unfortunately, YouTube content cannot be played directly through phone calls. Please visit the YouTube link to watch this debate.`);
-      
-      // Add playback controls
-      const gather = twiml.gather({
-        numDigits: 1,
-        timeout: 10,
-        action: '/webhook/debate-controls',
-        method: 'POST'
-      });
-      
-      gather.say(VOICE_CONFIG, 'Press 1 to hear another debate, or star to return to main menu.');
-      
-      twiml.say(VOICE_CONFIG, 'No input received.');
-      twiml.redirect('/webhook/ivr-main');
-    }
+    twiml.say(VOICE_CONFIG, `Now playing: ${title}`);
+    
+    // Play the MP3 file directly - sync.com MP3s should work well with SignalWire
+    twiml.play(selectedDebate.url);
+    
+    // Add playback controls after the audio
+    const gather = twiml.gather({
+      numDigits: 1,
+      timeout: 10,
+      action: '/webhook/debate-controls',
+      method: 'POST'
+    });
+    
+    gather.say(VOICE_CONFIG, 'Press 1 to hear another debate, or star to return to main menu.');
+    
+    twiml.say(VOICE_CONFIG, 'No input received.');
+    twiml.redirect('/webhook/ivr-main');
     
   } catch (error) {
     console.error('❌ Error playing debate:', error);
@@ -2713,19 +2701,101 @@ app.all('/webhook/play-debate', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Handle debate playback controls
+// Handle debate playback controls - file navigation
 app.all('/webhook/debate-controls', async (req, res) => {
   const digits = req.body.Digits;
+  const currentIndex = parseInt(req.query.currentIndex || '0');
+  const totalFiles = parseInt(req.query.totalFiles || '3');
   const twiml = new VoiceResponse();
   
-  if (digits === '1') {
-    // Return to debate selection
-    twiml.redirect('/webhook/select-channel?digits=50');
-  } else if (digits === '*') {
-    // Return to main menu
-    twiml.redirect('/webhook/ivr-main');
-  } else {
-    twiml.say(VOICE_CONFIG, 'Invalid option.');
+  console.log(`🎵 Debate controls: ${digits}, currentIndex: ${currentIndex}, totalFiles: ${totalFiles}`);
+  
+  try {
+    // Re-fetch file list from sync.com
+    let fileList = [];
+    try {
+      const syncFolderUrl = 'https://ln5.sync.com/4.0/dl/34fe51340#teq5fmt7-aktqvy7h-27qrby4k-jevmstab';
+      const response = await axios.get(syncFolderUrl, { timeout: 10000 });
+      const html = response.data;
+      const fileMatches = html.match(/href="[^"]*\.mp3"/gi) || [];
+      fileList = fileMatches.map(match => {
+        const filename = match.match(/href="([^"]*\.mp3)"/i)[1];
+        return filename.split('/').pop(); // Get just the filename
+      });
+    } catch (fetchError) {
+      console.log(`⚠️ Could not fetch file list: ${fetchError.message}`);
+      // Fallback to assuming some common filenames
+      fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+    }
+  
+    if (digits === '*1') {
+      // Next file
+      const nextIndex = (currentIndex + 1) % fileList.length;
+      const nextFile = fileList[nextIndex];
+      const nextFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${nextFile}`;
+      const filename = nextFile.replace('.mp3', '').replace(/[-_]/g, ' ');
+      
+      console.log(`⏭️ Playing next file: ${nextFile} (index ${nextIndex})`);
+      
+      twiml.say(VOICE_CONFIG, `Playing: ${filename}`);
+      twiml.play(nextFileUrl);
+      
+      const gather = twiml.gather({
+        numDigits: 2,
+        timeout: 30,
+        action: `/webhook/debate-controls?currentIndex=${nextIndex}&totalFiles=${fileList.length}`,
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
+      twiml.redirect('/webhook/ivr-main');
+      
+    } else if (digits === '*2') {
+      // Previous file
+      const prevIndex = currentIndex > 0 ? currentIndex - 1 : fileList.length - 1;
+      const prevFile = fileList[prevIndex];
+      const prevFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${prevFile}`;
+      const filename = prevFile.replace('.mp3', '').replace(/[-_]/g, ' ');
+      
+      console.log(`⏮️ Playing previous file: ${prevFile} (index ${prevIndex})`);
+      
+      twiml.say(VOICE_CONFIG, `Playing: ${filename}`);
+      twiml.play(prevFileUrl);
+      
+      const gather = twiml.gather({
+        numDigits: 2,
+        timeout: 30,
+        action: `/webhook/debate-controls?currentIndex=${prevIndex}&totalFiles=${fileList.length}`,
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
+      twiml.redirect('/webhook/ivr-main');
+      
+    } else if (digits === '**') {
+      // Return to main menu
+      twiml.redirect('/webhook/ivr-main');
+    } else {
+      // Invalid input - replay current file
+      const currentFile = fileList[currentIndex];
+      const currentFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${currentFile}`;
+      
+      twiml.say(VOICE_CONFIG, 'Invalid option. Replaying current file.');
+      twiml.play(currentFileUrl);
+      
+      const gather = twiml.gather({
+        numDigits: 2,
+        timeout: 30,
+        action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}`,
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
+      twiml.redirect('/webhook/ivr-main');
+    }
+  } catch (error) {
+    console.error('❌ Error in debate controls:', error);
+    twiml.say(VOICE_CONFIG, 'Sorry, there was an error with playback controls.');
     twiml.redirect('/webhook/ivr-main');
   }
   
