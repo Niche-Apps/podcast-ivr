@@ -1209,19 +1209,19 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         console.log(`🔍 Scanning for MP3 files in sync.com folder...`);
         
-        // Test a smaller set of most common patterns first
-        const quickPatterns = ['1.mp3', '2.mp3', '3.mp3', 'debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        // Test your specific debate files first
+        const yourFiles = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
         
-        console.log(`🔍 Quick scan for common files: ${quickPatterns.join(', ')}`);
+        console.log(`🔍 Quick scan for your debate files: ${yourFiles.join(', ')}`);
         
-        // Test each potential filename to see if it exists
-        for (const filename of quickPatterns) {
+        // Test each of your files to see if it exists
+        for (const filename of yourFiles) {
           try {
             const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${filename}`;
             console.log(`🔍 Testing: ${filename}`);
             
             const response = await axios.head(testUrl, { 
-              timeout: 2000, // Reduced timeout
+              timeout: 1500, // Even shorter timeout
               validateStatus: function (status) {
                 return status === 200; // Only accept 200 as success
               }
@@ -1271,10 +1271,11 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         console.log(`📂 Found ${fileList.length} MP3 files: ${fileList.join(', ')}`);
         
-        // If no files found, use a fallback
+        // If no files found, use a fallback with the debate files you uploaded
         if (fileList.length === 0) {
-          console.log(`⚠️ No MP3 files detected. Using fallback filename patterns.`);
-          fileList = ['1.mp3', '2.mp3', '3.mp3']; // Simple fallback
+          console.log(`⚠️ No MP3 files detected via HTTP testing. Using fallback with known debate files.`);
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3']; // Your uploaded files
+          console.log(`📂 Using fallback list: ${fileList.join(', ')}`);
         }
         
         if (fileList.length === 0) {
@@ -2787,57 +2788,8 @@ app.all('/webhook/debate-controls', async (req, res) => {
   console.log(`🎵 Debate controls: ${digits}, currentIndex: ${currentIndex}, totalFiles: ${totalFiles}`);
   
   try {
-    // Dynamic file discovery - same as main handler
-    const commonPatterns = [
-      // Common naming patterns
-      'debate1.mp3', 'debate2.mp3', 'debate3.mp3', 'debate4.mp3', 'debate5.mp3',
-      'debate6.mp3', 'debate7.mp3', 'debate8.mp3', 'debate9.mp3', 'debate10.mp3',
-      'file1.mp3', 'file2.mp3', 'file3.mp3', 'file4.mp3', 'file5.mp3',
-      'audio1.mp3', 'audio2.mp3', 'audio3.mp3', 'audio4.mp3', 'audio5.mp3',
-      'track1.mp3', 'track2.mp3', 'track3.mp3', 'track4.mp3', 'track5.mp3',
-      '1.mp3', '2.mp3', '3.mp3', '4.mp3', '5.mp3', '6.mp3', '7.mp3', '8.mp3', '9.mp3', '10.mp3',
-      // Topic-based patterns
-      'catholic.mp3', 'protestant.mp3', 'apologetics.mp3', 'theology.mp3',
-      'jimmy-aiken.mp3', 'james-white.mp3', 'walter-martin.mp3',
-      // Date patterns (common for uploads)
-      '2024-01.mp3', '2024-02.mp3', '2024-03.mp3', '2024-04.mp3', '2024-05.mp3',
-      '2024-06.mp3', '2024-07.mp3', '2024-08.mp3', '2024-09.mp3', '2024-10.mp3',
-      '2024-11.mp3', '2024-12.mp3', '2025-01.mp3', '2025-02.mp3', '2025-03.mp3',
-      // Generic patterns
-      'a.mp3', 'b.mp3', 'c.mp3', 'd.mp3', 'e.mp3',
-      'test.mp3', 'sample.mp3', 'demo.mp3'
-    ];
-    
-    let fileList = [];
-    
-    // Test each potential filename to see if it exists
-    for (const filename of commonPatterns) {
-      try {
-        const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${filename}`;
-        const response = await axios.head(testUrl, { 
-          timeout: 3000,
-          validateStatus: function (status) {
-            return status === 200; // Only accept 200 as success
-          }
-        });
-        
-        if (response.status === 200) {
-          fileList.push(filename);
-          
-          // Stop after finding 10 files to avoid too many requests
-          if (fileList.length >= 10) {
-            break;
-          }
-        }
-      } catch (error) {
-        // File doesn't exist or network error - just continue silently
-      }
-    }
-    
-    // If no files found, use a fallback
-    if (fileList.length === 0) {
-      fileList = ['1.mp3', '2.mp3', '3.mp3']; // Simple fallback
-    }
+    // For controls, just use the known debate files to avoid delays
+    const fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
   
     if (digits === '*1') {
       // Next file
