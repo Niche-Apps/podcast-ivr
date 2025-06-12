@@ -1207,14 +1207,38 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         let fileList = [];
         
-        console.log(`🔍 Using known debate files directly to avoid network issues...`);
+        console.log(`🔍 Dynamically fetching MP3 files from GitHub repository...`);
         
-        // Skip HTTP testing for now - just use your known files
-        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
-        console.log(`📂 Using your uploaded debate files: ${fileList.join(', ')}`);
+        // Use GitHub repository for reliable MP3 hosting
+        const githubBaseUrl = 'https://github.com/NicheApps/audio/raw/main/';
+        const githubApiUrl = 'https://api.github.com/repos/NicheApps/audio/contents';
         
-        // Test the exact URL you provided to verify it works
-        console.log(`🔗 Direct URL for debate1: https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/debate1.mp3`);
+        try {
+          console.log(`📡 Fetching file list from GitHub API: ${githubApiUrl}`);
+          const response = await axios.get(githubApiUrl, { timeout: 10000 });
+          
+          // Filter for MP3 files only
+          const mp3Files = response.data
+            .filter(file => file.name.toLowerCase().endsWith('.mp3'))
+            .map(file => file.name)
+            .sort(); // Sort alphabetically
+          
+          console.log(`📂 Found ${mp3Files.length} MP3 files: ${mp3Files.join(', ')}`);
+          
+          if (mp3Files.length > 0) {
+            fileList = mp3Files;
+          } else {
+            console.log(`⚠️ No MP3 files found in repository`);
+            fileList = [];
+          }
+          
+        } catch (apiError) {
+          console.error(`❌ GitHub API failed: ${apiError.message}`);
+          console.log(`📂 Falling back to known files: debate1.mp3, debate2.mp3, debate3.mp3`);
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
+        
+        console.log(`📂 Final file list: ${fileList.join(', ')}`);
         
         if (fileList.length === 0) {
           twiml.say(VOICE_CONFIG, 'No MP3 files found in shared folder. Please check the folder contents.');
@@ -1225,7 +1249,9 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         // Start playing the first file immediately with podcast-style controls
         const firstFile = fileList[0];
-        const firstFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${firstFile}`;
+        
+        // Use GitHub raw URL for reliable hosting
+        const firstFileUrl = `${githubBaseUrl}${firstFile}`;
         const filename = firstFile.replace('.mp3', '').replace(/[-_]/g, ' ');
         
         console.log(`🎵 Auto-playing first file: ${firstFile}`);
@@ -2728,14 +2754,38 @@ app.all('/webhook/debate-controls', async (req, res) => {
   console.log(`🎵 Debate controls: ${digits}, currentIndex: ${currentIndex}, totalFiles: ${totalFiles}`);
   
   try {
-    // For controls, just use the known debate files to avoid delays
-    const fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+    // Use GitHub repository for reliable MP3 hosting
+    const githubBaseUrl = 'https://github.com/NicheApps/audio/raw/main/';
+    const githubApiUrl = 'https://api.github.com/repos/NicheApps/audio/contents';
+    
+    let fileList = [];
+    
+    try {
+      console.log(`📡 Fetching file list from GitHub API for controls...`);
+      const response = await axios.get(githubApiUrl, { timeout: 5000 });
+      
+      // Filter for MP3 files only
+      const mp3Files = response.data
+        .filter(file => file.name.toLowerCase().endsWith('.mp3'))
+        .map(file => file.name)
+        .sort(); // Sort alphabetically
+      
+      if (mp3Files.length > 0) {
+        fileList = mp3Files;
+      } else {
+        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+      }
+      
+    } catch (apiError) {
+      console.error(`❌ GitHub API failed in controls: ${apiError.message}`);
+      fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+    }
   
     if (digits === '*1') {
       // Next file
       const nextIndex = (currentIndex + 1) % fileList.length;
       const nextFile = fileList[nextIndex];
-      const nextFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${nextFile}`;
+      const nextFileUrl = `${githubBaseUrl}${nextFile}`;
       const filename = nextFile.replace('.mp3', '').replace(/[-_]/g, ' ');
       
       console.log(`⏭️ Playing next file: ${nextFile} (index ${nextIndex})`);
@@ -2757,7 +2807,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
       // Previous file
       const prevIndex = currentIndex > 0 ? currentIndex - 1 : fileList.length - 1;
       const prevFile = fileList[prevIndex];
-      const prevFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${prevFile}`;
+      const prevFileUrl = `${githubBaseUrl}${prevFile}`;
       const filename = prevFile.replace('.mp3', '').replace(/[-_]/g, ' ');
       
       console.log(`⏮️ Playing previous file: ${prevFile} (index ${prevIndex})`);
@@ -2781,7 +2831,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
     } else {
       // Invalid input - replay current file
       const currentFile = fileList[currentIndex];
-      const currentFileUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${currentFile}`;
+      const currentFileUrl = `${githubBaseUrl}${currentFile}`;
       
       twiml.say(VOICE_CONFIG, 'Invalid option. Replaying current file.');
       twiml.play(currentFileUrl);
