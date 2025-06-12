@@ -1,0 +1,33 @@
+{
+  "exemptNumbers": [
+    {
+      "phone": "+15551234567",
+      "reason": "Test VIP customer",
+      "added": "2025-06-10T13:17:37.700Z",
+      "addedBy": "railway-admin"
+    },
+    {
+      "phone": "+19998887777",
+      "reason": "Premium customers",
+      "added": "2025-06-10T13:17:55.613Z",
+      "addedBy": "railway-admin"
+    },
+    {
+      "phone": "+14445556666",
+      "reason": "Premium customers",
+      "added": "2025-06-10T13:17:55.615Z",
+      "addedBy": "railway-admin"
+    },
+    {
+      "phone": "+12223334444",
+      "reason": "Premium customers",
+      "added": "2025-06-10T13:17:55.615Z",
+      "addedBy": "railway-admin"
+    }
+  ],
+  "metadata": {
+    "lastUpdated": "2025-06-10T13:17:55.615Z",
+    "totalExemptions": 4,
+    "source": "railway-direct"
+  }
+}
