@@ -142,6 +142,11 @@
       "rssUrl": "https://feeds.megaphone.fm/WWO3519750118",
       "description": "Conservative wisdom and values"
     },
+    "40": {
+      "name": "Sermons",
+      "rssUrl": "PILGRIM_SERMONS",
+      "description": "Sermons from Pilgrim Ministry"
+    },
     "50": {
       "name": "Debates",
       "rssUrl": "YOUTUBE_DEBATES",

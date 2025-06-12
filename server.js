@@ -24,6 +24,9 @@ const WEATHER_API_KEY = process.env.WEATHER_API_KEY || '3d01c291215870d467a4f388
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Serve static audio files
+app.use('/audio', express.static('public/audio'));
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -1207,38 +1210,26 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         let fileList = [];
         
-        console.log(`🔍 Dynamically fetching MP3 files from GitHub repository...`);
+        console.log(`🔍 Using Railway static file hosting for MP3 files...`);
         
-        // Use GitHub repository for reliable MP3 hosting
-        const githubBaseUrl = 'https://github.com/NicheApps/audio/raw/main/';
-        const githubApiUrl = 'https://api.github.com/repos/NicheApps/audio/contents';
+        // Option 1: Railway static files (recommended)
+        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/audio/`;
         
-        try {
-          console.log(`📡 Fetching file list from GitHub API: ${githubApiUrl}`);
-          const response = await axios.get(githubApiUrl, { timeout: 10000 });
-          
-          // Filter for MP3 files only
-          const mp3Files = response.data
-            .filter(file => file.name.toLowerCase().endsWith('.mp3'))
-            .map(file => file.name)
-            .sort(); // Sort alphabetically
-          
-          console.log(`📂 Found ${mp3Files.length} MP3 files: ${mp3Files.join(', ')}`);
-          
-          if (mp3Files.length > 0) {
-            fileList = mp3Files;
-          } else {
-            console.log(`⚠️ No MP3 files found in repository`);
-            fileList = [];
-          }
-          
-        } catch (apiError) {
-          console.error(`❌ GitHub API failed: ${apiError.message}`);
-          console.log(`📂 Falling back to known files: debate1.mp3, debate2.mp3, debate3.mp3`);
-          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
-        }
+        // Option 2: Dropbox direct links
+        const dropboxFiles = [
+          { name: 'debate1.mp3', url: 'DROPBOX_DIRECT_URL_1' },
+          { name: 'debate2.mp3', url: 'DROPBOX_DIRECT_URL_2' },
+          { name: 'debate3.mp3', url: 'DROPBOX_DIRECT_URL_3' }
+        ];
         
-        console.log(`📂 Final file list: ${fileList.join(', ')}`);
+        // For now, use a static list pointing to Railway-hosted files
+        // You'll upload MP3s to /public/audio/ folder
+        const railwayFiles = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        
+        console.log(`📂 Using Railway hosting: ${railwayBaseUrl}`);
+        console.log(`📂 Expected files: ${railwayFiles.join(', ')}`);
+        
+        fileList = railwayFiles;
         
         if (fileList.length === 0) {
           twiml.say(VOICE_CONFIG, 'No MP3 files found in shared folder. Please check the folder contents.');
@@ -1250,8 +1241,8 @@ app.post('/webhook/select-channel', async (req, res) => {
         // Start playing the first file immediately with podcast-style controls
         const firstFile = fileList[0];
         
-        // Use GitHub raw URL for reliable hosting
-        const firstFileUrl = `${githubBaseUrl}${firstFile}`;
+        // Use Railway static file hosting
+        const firstFileUrl = `${railwayBaseUrl}${firstFile}`;
         const filename = firstFile.replace('.mp3', '').replace(/[-_]/g, ' ');
         
         console.log(`🎵 Auto-playing first file: ${firstFile}`);
@@ -1281,6 +1272,82 @@ app.post('/webhook/select-channel', async (req, res) => {
         console.error('❌ Full error:', error);
         console.error('❌ Error stack:', error.stack);
         twiml.say(VOICE_CONFIG, `Sorry, debates are temporarily unavailable. Error: ${error.message.substring(0, 50)}`);
+        twiml.redirect('/webhook/ivr-main');
+        res.type('text/xml');
+        return res.send(twiml.toString());
+      }
+    }
+
+    // Handle Pilgrim Ministry sermons
+    if (selectedPodcast.rssUrl === 'PILGRIM_SERMONS') {
+      console.log(`⛪ Loading sermons from Pilgrim Ministry website`);
+      
+      try {
+        // Scrape sermons from https://www.pilgrimministry.org/allsermons
+        const sermonUrl = 'https://www.pilgrimministry.org/allsermons';
+        console.log(`📡 Fetching sermons from: ${sermonUrl}`);
+        
+        const response = await axios.get(sermonUrl, { timeout: 15000 });
+        const html = response.data;
+        
+        // Parse HTML to extract sermon audio links
+        // Look for audio links in the page (this may need adjustment based on site structure)
+        const audioMatches = html.match(/href="[^"]*\.mp3[^"]*"/gi) || [];
+        let sermonFiles = [];
+        
+        // Extract and clean up the audio URLs
+        audioMatches.slice(0, 10).forEach((match, index) => {
+          const audioUrl = match.match(/href="([^"]*)"/i)[1];
+          // Clean up relative URLs
+          const fullUrl = audioUrl.startsWith('http') ? audioUrl : `https://www.pilgrimministry.org${audioUrl}`;
+          
+          sermonFiles.push({
+            id: index + 1,
+            title: `Sermon ${index + 1}`,
+            url: fullUrl
+          });
+        });
+        
+        console.log(`⛪ Found ${sermonFiles.length} sermon audio files`);
+        
+        if (sermonFiles.length === 0) {
+          twiml.say(VOICE_CONFIG, 'No sermons are currently available. Please try again later.');
+          twiml.redirect('/webhook/ivr-main');
+          res.type('text/xml');
+          return res.send(twiml.toString());
+        }
+        
+        // Start playing the first sermon immediately with podcast-style controls
+        const firstSermon = sermonFiles[0];
+        const filename = firstSermon.title;
+        
+        console.log(`⛪ Auto-playing first sermon: ${firstSermon.title}`);
+        console.log(`🎵 Sermon URL: ${firstSermon.url}`);
+        
+        twiml.say(VOICE_CONFIG, `Welcome to Pilgrim Ministry Sermons. Playing: ${filename}. Use star-1 for next, star-2 for previous, or star-star to return to main menu.`);
+        
+        // Play the first sermon
+        twiml.play(firstSermon.url);
+        
+        // Add podcast-style navigation controls
+        const gather = twiml.gather({
+          numDigits: 2,
+          timeout: 30,
+          action: `/webhook/sermon-controls?currentIndex=0&totalSermons=${sermonFiles.length}`,
+          method: 'POST'
+        });
+        
+        gather.say(VOICE_CONFIG, 'Press star-1 for next sermon, star-2 for previous, or star-star for main menu.');
+        
+        twiml.say(VOICE_CONFIG, 'Returning to main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        res.type('text/xml');
+        return res.send(twiml.toString());
+        
+      } catch (error) {
+        console.error('❌ Error loading sermons from Pilgrim Ministry:', error.message);
+        console.error('❌ Full error:', error);
+        twiml.say(VOICE_CONFIG, `Sorry, sermons are temporarily unavailable. Error: ${error.message.substring(0, 50)}`);
         twiml.redirect('/webhook/ivr-main');
         res.type('text/xml');
         return res.send(twiml.toString());
@@ -2754,38 +2821,15 @@ app.all('/webhook/debate-controls', async (req, res) => {
   console.log(`🎵 Debate controls: ${digits}, currentIndex: ${currentIndex}, totalFiles: ${totalFiles}`);
   
   try {
-    // Use GitHub repository for reliable MP3 hosting
-    const githubBaseUrl = 'https://github.com/NicheApps/audio/raw/main/';
-    const githubApiUrl = 'https://api.github.com/repos/NicheApps/audio/contents';
-    
-    let fileList = [];
-    
-    try {
-      console.log(`📡 Fetching file list from GitHub API for controls...`);
-      const response = await axios.get(githubApiUrl, { timeout: 5000 });
-      
-      // Filter for MP3 files only
-      const mp3Files = response.data
-        .filter(file => file.name.toLowerCase().endsWith('.mp3'))
-        .map(file => file.name)
-        .sort(); // Sort alphabetically
-      
-      if (mp3Files.length > 0) {
-        fileList = mp3Files;
-      } else {
-        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
-      }
-      
-    } catch (apiError) {
-      console.error(`❌ GitHub API failed in controls: ${apiError.message}`);
-      fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
-    }
+    // Use Railway static file hosting
+    const railwayBaseUrl = `${req.protocol}://${req.get('host')}/audio/`;
+    const fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
   
     if (digits === '*1') {
       // Next file
       const nextIndex = (currentIndex + 1) % fileList.length;
       const nextFile = fileList[nextIndex];
-      const nextFileUrl = `${githubBaseUrl}${nextFile}`;
+      const nextFileUrl = `${railwayBaseUrl}${nextFile}`;
       const filename = nextFile.replace('.mp3', '').replace(/[-_]/g, ' ');
       
       console.log(`⏭️ Playing next file: ${nextFile} (index ${nextIndex})`);
@@ -2807,7 +2851,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
       // Previous file
       const prevIndex = currentIndex > 0 ? currentIndex - 1 : fileList.length - 1;
       const prevFile = fileList[prevIndex];
-      const prevFileUrl = `${githubBaseUrl}${prevFile}`;
+      const prevFileUrl = `${railwayBaseUrl}${prevFile}`;
       const filename = prevFile.replace('.mp3', '').replace(/[-_]/g, ' ');
       
       console.log(`⏮️ Playing previous file: ${prevFile} (index ${prevIndex})`);
@@ -2831,7 +2875,7 @@ app.all('/webhook/debate-controls', async (req, res) => {
     } else {
       // Invalid input - replay current file
       const currentFile = fileList[currentIndex];
-      const currentFileUrl = `${githubBaseUrl}${currentFile}`;
+      const currentFileUrl = `${railwayBaseUrl}${currentFile}`;
       
       twiml.say(VOICE_CONFIG, 'Invalid option. Replaying current file.');
       twiml.play(currentFileUrl);
@@ -2849,6 +2893,120 @@ app.all('/webhook/debate-controls', async (req, res) => {
   } catch (error) {
     console.error('❌ Error in debate controls:', error);
     twiml.say(VOICE_CONFIG, 'Sorry, there was an error with playback controls.');
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Handle sermon playback controls - file navigation
+app.all('/webhook/sermon-controls', async (req, res) => {
+  const digits = req.body.Digits;
+  const currentIndex = parseInt(req.query.currentIndex || '0');
+  const totalSermons = parseInt(req.query.totalSermons || '5');
+  const twiml = new VoiceResponse();
+  
+  console.log(`⛪ Sermon controls: ${digits}, currentIndex: ${currentIndex}, totalSermons: ${totalSermons}`);
+  
+  try {
+    // Re-scrape sermons from Pilgrim Ministry (or use cached results)
+    const sermonUrl = 'https://www.pilgrimministry.org/allsermons';
+    let sermonFiles = [];
+    
+    try {
+      console.log(`📡 Re-fetching sermons for controls...`);
+      const response = await axios.get(sermonUrl, { timeout: 10000 });
+      const html = response.data;
+      
+      const audioMatches = html.match(/href="[^"]*\.mp3[^"]*"/gi) || [];
+      
+      audioMatches.slice(0, 10).forEach((match, index) => {
+        const audioUrl = match.match(/href="([^"]*)"/i)[1];
+        const fullUrl = audioUrl.startsWith('http') ? audioUrl : `https://www.pilgrimministry.org${audioUrl}`;
+        
+        sermonFiles.push({
+          id: index + 1,
+          title: `Sermon ${index + 1}`,
+          url: fullUrl
+        });
+      });
+      
+    } catch (fetchError) {
+      console.error(`❌ Error re-fetching sermons: ${fetchError.message}`);
+      // Create fallback sermon list
+      for (let i = 1; i <= totalSermons; i++) {
+        sermonFiles.push({
+          id: i,
+          title: `Sermon ${i}`,
+          url: `https://www.pilgrimministry.org/sermon${i}.mp3` // Fallback URL
+        });
+      }
+    }
+    
+    if (digits === '*1') {
+      // Next sermon
+      const nextIndex = (currentIndex + 1) % sermonFiles.length;
+      const nextSermon = sermonFiles[nextIndex];
+      
+      console.log(`⏭️ Playing next sermon: ${nextSermon.title} (index ${nextIndex})`);
+      
+      twiml.say(VOICE_CONFIG, `Playing: ${nextSermon.title}`);
+      twiml.play(nextSermon.url);
+      
+      const gather = twiml.gather({
+        numDigits: 2,
+        timeout: 30,
+        action: `/webhook/sermon-controls?currentIndex=${nextIndex}&totalSermons=${sermonFiles.length}`,
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press star-1 for next sermon, star-2 for previous, or star-star for main menu.');
+      twiml.redirect('/webhook/ivr-main');
+      
+    } else if (digits === '*2') {
+      // Previous sermon
+      const prevIndex = currentIndex > 0 ? currentIndex - 1 : sermonFiles.length - 1;
+      const prevSermon = sermonFiles[prevIndex];
+      
+      console.log(`⏮️ Playing previous sermon: ${prevSermon.title} (index ${prevIndex})`);
+      
+      twiml.say(VOICE_CONFIG, `Playing: ${prevSermon.title}`);
+      twiml.play(prevSermon.url);
+      
+      const gather = twiml.gather({
+        numDigits: 2,
+        timeout: 30,
+        action: `/webhook/sermon-controls?currentIndex=${prevIndex}&totalSermons=${sermonFiles.length}`,
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press star-1 for next sermon, star-2 for previous, or star-star for main menu.');
+      twiml.redirect('/webhook/ivr-main');
+      
+    } else if (digits === '**') {
+      // Return to main menu
+      twiml.redirect('/webhook/ivr-main');
+    } else {
+      // Invalid input - replay current sermon
+      const currentSermon = sermonFiles[currentIndex];
+      
+      twiml.say(VOICE_CONFIG, 'Invalid option. Replaying current sermon.');
+      twiml.play(currentSermon.url);
+      
+      const gather = twiml.gather({
+        numDigits: 2,
+        timeout: 30,
+        action: `/webhook/sermon-controls?currentIndex=${currentIndex}&totalSermons=${sermonFiles.length}`,
+        method: 'POST'
+      });
+      
+      gather.say(VOICE_CONFIG, 'Press star-1 for next sermon, star-2 for previous, or star-star for main menu.');
+      twiml.redirect('/webhook/ivr-main');
+    }
+  } catch (error) {
+    console.error('❌ Error in sermon controls:', error);
+    twiml.say(VOICE_CONFIG, 'Sorry, there was an error with sermon playback controls.');
     twiml.redirect('/webhook/ivr-main');
   }
   
