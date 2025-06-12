@@ -1207,81 +1207,14 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         let fileList = [];
         
-        console.log(`🔍 Scanning for MP3 files in sync.com folder...`);
+        console.log(`🔍 Using known debate files directly to avoid network issues...`);
         
-        // Test your specific debate files first
-        const yourFiles = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        // Skip HTTP testing for now - just use your known files
+        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        console.log(`📂 Using your uploaded debate files: ${fileList.join(', ')}`);
         
-        console.log(`🔍 Quick scan for your debate files: ${yourFiles.join(', ')}`);
-        
-        // Test each of your files to see if it exists
-        for (const filename of yourFiles) {
-          try {
-            const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${filename}`;
-            console.log(`🔍 Testing: ${filename}`);
-            
-            const response = await axios.head(testUrl, { 
-              timeout: 1500, // Even shorter timeout
-              validateStatus: function (status) {
-                return status === 200; // Only accept 200 as success
-              }
-            });
-            
-            if (response.status === 200) {
-              console.log(`✅ Found MP3: ${filename}`);
-              fileList.push(filename);
-            }
-          } catch (error) {
-            console.log(`❌ Not found or error: ${filename} - ${error.message}`);
-          }
-        }
-        
-        console.log(`📂 After quick scan, found ${fileList.length} files: ${fileList.join(', ')}`);
-        
-        // If we found some files, continue with full scan for more
-        if (fileList.length > 0 && fileList.length < 5) {
-          console.log(`🔍 Found some files, doing extended scan...`);
-          for (const filename of commonPatterns) {
-            if (quickPatterns.includes(filename)) continue; // Skip already tested
-            
-            try {
-              const testUrl = `https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/${filename}`;
-              const response = await axios.head(testUrl, { 
-                timeout: 2000,
-                validateStatus: function (status) {
-                  return status === 200;
-                }
-              });
-              
-              if (response.status === 200) {
-                console.log(`✅ Found additional MP3: ${filename}`);
-                fileList.push(filename);
-                
-                // Stop after finding 10 files total
-                if (fileList.length >= 10) {
-                  console.log(`📂 Found ${fileList.length} files, stopping scan`);
-                  break;
-                }
-              }
-            } catch (error) {
-              // Continue silently
-            }
-          }
-        }
-        
-        console.log(`📂 Found ${fileList.length} MP3 files: ${fileList.join(', ')}`);
-        
-        // If no files found, use a fallback with the debate files you uploaded
-        if (fileList.length === 0) {
-          console.log(`⚠️ No MP3 files detected via HTTP testing. Using fallback with known debate files.`);
-          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3']; // Your uploaded files
-          console.log(`📂 Using fallback list: ${fileList.join(', ')}`);
-          
-          // Test the exact URL you provided to verify it works
-          console.log(`🔗 Testing your provided URL for debate1.mp3...`);
-          const testDirectUrl = 'https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/debate1.mp3';
-          console.log(`🔗 Direct URL: ${testDirectUrl}`);
-        }
+        // Test the exact URL you provided to verify it works
+        console.log(`🔗 Direct URL for debate1: https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/debate1.mp3`);
         
         if (fileList.length === 0) {
           twiml.say(VOICE_CONFIG, 'No MP3 files found in shared folder. Please check the folder contents.');
@@ -1318,8 +1251,10 @@ app.post('/webhook/select-channel', async (req, res) => {
         return res.send(twiml.toString());
         
       } catch (error) {
-        console.error('❌ Error loading debates from shared folder:', error);
-        twiml.say(VOICE_CONFIG, 'Sorry, debates are temporarily unavailable.');
+        console.error('❌ Error loading debates from shared folder:', error.message);
+        console.error('❌ Full error:', error);
+        console.error('❌ Error stack:', error.stack);
+        twiml.say(VOICE_CONFIG, `Sorry, debates are temporarily unavailable. Error: ${error.message.substring(0, 50)}`);
         twiml.redirect('/webhook/ivr-main');
         res.type('text/xml');
         return res.send(twiml.toString());
