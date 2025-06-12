@@ -1276,6 +1276,11 @@ app.post('/webhook/select-channel', async (req, res) => {
           console.log(`⚠️ No MP3 files detected via HTTP testing. Using fallback with known debate files.`);
           fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3']; // Your uploaded files
           console.log(`📂 Using fallback list: ${fileList.join(', ')}`);
+          
+          // Test the exact URL you provided to verify it works
+          console.log(`🔗 Testing your provided URL for debate1.mp3...`);
+          const testDirectUrl = 'https://ln5.sync.com/4.0/dl/34fe51340/teq5fmt7-aktqvy7h-27qrby4k-jevmstab/debate1.mp3';
+          console.log(`🔗 Direct URL: ${testDirectUrl}`);
         }
         
         if (fileList.length === 0) {
