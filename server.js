@@ -2630,10 +2630,43 @@ app.all('/webhook/play-debate', async (req, res) => {
     if (isDirectAudio) {
       // Play the audio directly
       const title = selectedDebate.title || selectedDebate.description || 'Selected debate';
+      console.log(`🎵 Attempting to play audio URL: ${selectedDebate.url.substring(0, 100)}...`);
+      console.log(`🎵 Full URL length: ${selectedDebate.url.length} characters`);
+      
+      // Check if URL might be expired (basic check)
+      const urlObj = new URL(selectedDebate.url);
+      const expireParam = urlObj.searchParams.get('expire');
+      if (expireParam) {
+        const expireTime = parseInt(expireParam) * 1000; // Convert to milliseconds
+        const now = Date.now();
+        console.log(`🕐 URL expires: ${new Date(expireTime)}, Current time: ${new Date(now)}`);
+        if (now > expireTime) {
+          console.log(`⚠️ URL may have expired`);
+          twiml.say(VOICE_CONFIG, 'Sorry, this audio link has expired. Please try another debate or contact support.');
+          twiml.redirect('/webhook/select-channel?digits=50');
+          return res.type('text/xml').send(twiml.toString());
+        }
+      }
+      
       twiml.say(VOICE_CONFIG, `Now playing: ${title}`);
       
-      // Play the audio file
-      twiml.play(selectedDebate.url);
+      // SignalWire supports MP3, WAV, and some other formats
+      // WebM might not be supported, so let's add a warning
+      if (selectedDebate.url.includes('mime=audio%2Fwebm')) {
+        console.log(`⚠️ WebM audio format detected - may not be compatible with SignalWire`);
+      }
+      
+      // Add error handling for audio playback
+      try {
+        // Play the audio file with error handling
+        const play = twiml.play(selectedDebate.url);
+        console.log(`🎵 TwiML play element created successfully for SignalWire`);
+      } catch (playError) {
+        console.error(`❌ Error creating play element: ${playError.message}`);
+        twiml.say(VOICE_CONFIG, 'Sorry, there was an error playing this audio file. The format may not be supported by SignalWire.');
+        twiml.redirect('/webhook/select-channel?digits=50');
+        return res.type('text/xml').send(twiml.toString());
+      }
       
       // Add playback controls after the audio
       const gather = twiml.gather({
