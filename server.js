@@ -1114,7 +1114,7 @@ app.post('/upload-debate', (req, res) => {
       }
       
       // Simple file upload (this is basic - in production you'd want proper multipart parsing)
-      const filename = \`debate_\${Date.now()}.mp3\`;
+      const filename = `debate_${Date.now()}.mp3`;
       const filepath = path.join(debatesDir, filename);
       
       // Extract MP3 data from multipart form (basic implementation)
@@ -1123,17 +1123,17 @@ app.post('/upload-debate', (req, res) => {
         const parts = data.toString('binary').split('--' + boundary);
         for (let part of parts) {
           if (part.includes('Content-Type: audio/mpeg') || part.includes('filename=')) {
-            const headerEnd = part.indexOf('\\r\\n\\r\\n');
+            const headerEnd = part.indexOf('\r\n\r\n');
             if (headerEnd !== -1) {
               const fileData = Buffer.from(part.substring(headerEnd + 4), 'binary');
               fs.writeFileSync(filepath, fileData);
               
-              res.send(\`
+              res.send(`
                 <h1>✅ Upload Successful!</h1>
-                <p>File saved as: \${filename}</p>
+                <p>File saved as: ${filename}</p>
                 <a href="/upload-debates">Upload another file</a> | 
                 <a href="/debates-list">View all files</a>
-              \`);
+              `);
               return;
             }
           }
@@ -1166,7 +1166,7 @@ app.get('/debates-list', (req, res) => {
       files: files,
       mp3Files: mp3Files,
       totalFiles: files.length,
-      urls: mp3Files.map(file => \`\${req.protocol}://\${req.get('host')}/debates/\${file}\`)
+      urls: mp3Files.map(file => `${req.protocol}://${req.get('host')}/debates/${file}`)
     });
   } catch (error) {
     res.json({
