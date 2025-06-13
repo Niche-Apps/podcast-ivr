@@ -1079,16 +1079,59 @@ app.get('/upload-debates', (req, res) => {
             .upload-area { border: 2px dashed #ccc; padding: 20px; margin: 20px 0; }
             button { background: #4CAF50; color: white; padding: 10px 20px; border: none; cursor: pointer; }
             .file-list { margin: 20px 0; }
+            .progress { display: none; width: 100%; background: #f0f0f0; margin: 10px 0; }
+            .progress-bar { height: 20px; background: #4CAF50; width: 0%; }
         </style>
+        <script>
+            function uploadFile() {
+                const fileInput = document.getElementById('fileInput');
+                const file = fileInput.files[0];
+                if (!file) return;
+                
+                const progressDiv = document.getElementById('progress');
+                const progressBar = document.getElementById('progressBar');
+                const status = document.getElementById('status');
+                
+                progressDiv.style.display = 'block';
+                status.innerHTML = 'Uploading...';
+                
+                const xhr = new XMLHttpRequest();
+                xhr.upload.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        const percent = (e.loaded / e.total) * 100;
+                        progressBar.style.width = percent + '%';
+                        status.innerHTML = 'Uploading: ' + Math.round(percent) + '%';
+                    }
+                };
+                
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        status.innerHTML = 'Upload successful!';
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        status.innerHTML = 'Upload failed: ' + xhr.statusText;
+                    }
+                };
+                
+                xhr.onerror = function() {
+                    status.innerHTML = 'Upload failed: Network error';
+                };
+                
+                xhr.open('POST', '/upload-debate-binary?filename=' + encodeURIComponent(file.name));
+                xhr.send(file);
+            }
+        </script>
     </head>
     <body>
         <h1>🎙️ Upload Debate MP3 Files</h1>
         <div class="upload-area">
-            <form action="/upload-debate" method="post" enctype="multipart/form-data">
-                <input type="file" name="debate" accept=".mp3" required>
-                <br><br>
-                <button type="submit">Upload MP3</button>
-            </form>
+            <input type="file" id="fileInput" accept=".mp3" required>
+            <br><br>
+            <button onclick="uploadFile()">Upload MP3</button>
+            <div id="progress" class="progress">
+                <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <div id="status"></div>
         </div>
         <div class="file-list">
             <h3>Current Files:</h3>
@@ -1099,55 +1142,108 @@ app.get('/upload-debates', (req, res) => {
   `);
 });
 
-app.post('/upload-debate', (req, res) => {
-  // Simple raw body parser for file uploads
-  let data = Buffer.alloc(0);
-  req.on('data', chunk => {
-    data = Buffer.concat([data, chunk]);
-  });
+// Binary upload endpoint (more efficient for large files)
+app.post('/upload-debate-binary', (req, res) => {
+  const filename = req.query.filename || `debate_${Date.now()}.mp3`;
+  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
   
-  req.on('end', () => {
-    try {
-      // Ensure debates directory exists
-      const debatesDir = path.join(__dirname, 'public', 'debates');
-      if (!fs.existsSync(debatesDir)) {
-        fs.mkdirSync(debatesDir, { recursive: true });
-      }
-      
-      // Simple file upload (this is basic - in production you'd want proper multipart parsing)
-      const filename = `debate_${Date.now()}.mp3`;
-      const filepath = path.join(debatesDir, filename);
-      
-      // Extract MP3 data from multipart form (basic implementation)
-      const boundary = req.headers['content-type'].split('boundary=')[1];
-      if (boundary) {
-        const parts = data.toString('binary').split('--' + boundary);
-        for (let part of parts) {
-          if (part.includes('Content-Type: audio/mpeg') || part.includes('filename=')) {
-            const headerEnd = part.indexOf('\r\n\r\n');
-            if (headerEnd !== -1) {
-              const fileData = Buffer.from(part.substring(headerEnd + 4), 'binary');
-              fs.writeFileSync(filepath, fileData);
-              
-              res.send(`
-                <h1>✅ Upload Successful!</h1>
-                <p>File saved as: ${filename}</p>
-                <a href="/upload-debates">Upload another file</a> | 
-                <a href="/debates-list">View all files</a>
-              `);
-              return;
-            }
-          }
-        }
-      }
-      
-      res.status(400).send('Upload failed - invalid file format');
-      
-    } catch (error) {
-      console.error('Upload error:', error);
-      res.status(500).send('Upload failed: ' + error.message);
+  try {
+    const debatesDir = path.join(__dirname, 'public', 'debates');
+    if (!fs.existsSync(debatesDir)) {
+      fs.mkdirSync(debatesDir, { recursive: true });
     }
-  });
+    
+    const filepath = path.join(debatesDir, sanitizedFilename);
+    const writeStream = fs.createWriteStream(filepath);
+    
+    let totalSize = 0;
+    
+    req.on('data', chunk => {
+      totalSize += chunk.length;
+      writeStream.write(chunk);
+    });
+    
+    req.on('end', () => {
+      writeStream.end();
+      console.log(`✅ Binary upload completed: ${sanitizedFilename} (${totalSize} bytes)`);
+      res.json({ 
+        success: true, 
+        filename: sanitizedFilename, 
+        size: totalSize 
+      });
+    });
+    
+    req.on('error', (error) => {
+      console.error('Binary upload error:', error);
+      writeStream.destroy();
+      if (fs.existsSync(filepath)) {
+        fs.unlinkSync(filepath);
+      }
+      res.status(500).json({ error: error.message });
+    });
+    
+  } catch (error) {
+    console.error('Binary upload setup error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/upload-debate', (req, res) => {
+  // Set longer timeout for large files
+  req.setTimeout(600000); // 10 minutes
+  res.setTimeout(600000);
+  
+  try {
+    // Ensure debates directory exists
+    const debatesDir = path.join(__dirname, 'public', 'debates');
+    if (!fs.existsSync(debatesDir)) {
+      fs.mkdirSync(debatesDir, { recursive: true });
+    }
+    
+    const filename = `debate_${Date.now()}.mp3`;
+    const filepath = path.join(debatesDir, filename);
+    const writeStream = fs.createWriteStream(filepath);
+    
+    let totalSize = 0;
+    const maxSize = 200 * 1024 * 1024; // 200MB limit
+    
+    req.on('data', chunk => {
+      totalSize += chunk.length;
+      if (totalSize > maxSize) {
+        writeStream.destroy();
+        fs.unlinkSync(filepath);
+        res.status(413).send('File too large (max 200MB)');
+        return;
+      }
+      writeStream.write(chunk);
+    });
+    
+    req.on('end', () => {
+      writeStream.end();
+      console.log(`✅ Upload completed: ${filename} (${totalSize} bytes)`);
+      
+      res.send(`
+        <h1>✅ Upload Successful!</h1>
+        <p>File saved as: ${filename}</p>
+        <p>Size: ${Math.round(totalSize / 1024 / 1024)} MB</p>
+        <a href="/upload-debates">Upload another file</a> | 
+        <a href="/debates-list">View all files</a>
+      `);
+    });
+    
+    req.on('error', (error) => {
+      console.error('Upload error:', error);
+      writeStream.destroy();
+      if (fs.existsSync(filepath)) {
+        fs.unlinkSync(filepath);
+      }
+      res.status(500).send('Upload failed: ' + error.message);
+    });
+    
+  } catch (error) {
+    console.error('Upload setup error:', error);
+    res.status(500).send('Upload failed: ' + error.message);
+  }
 });
 
 // Debug endpoint to list uploaded files
