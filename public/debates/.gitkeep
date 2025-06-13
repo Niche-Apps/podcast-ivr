@@ -1,0 +1,10 @@
+# This folder mirrors /Users/josephsee/audio/ for Extension 50 (Debates)
+# Upload your MP3 files here to make them available via Extension 50
+# Files will be served as https://your-railway-app.com/debates/filename.mp3
+
+# To add files:
+# 1. Copy MP3s from /Users/josephsee/audio/ to this folder
+# 2. Push to Railway 
+# 3. Extension 50 will automatically detect and play them
+
+# Supported formats: MP3, WAV, M4A, AAC

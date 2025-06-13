@@ -26,6 +26,7 @@ const port = process.env.PORT || 3000;
 
 // Serve static audio files
 app.use('/audio', express.static('public/audio'));
+app.use('/debates', express.static('public/debates'));
 
 // Middleware
 app.use(express.json());
@@ -1210,26 +1211,44 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         let fileList = [];
         
-        console.log(`🔍 Using Railway static file hosting for MP3 files...`);
+        console.log(`🔍 Using Railway /debates folder that mirrors /Users/josephsee/audio/...`);
         
-        // Option 1: Railway static files (recommended)
-        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/audio/`;
+        // Railway debates folder - mirrors your local /Users/josephsee/audio/
+        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
         
-        // Option 2: Dropbox direct links
-        const dropboxFiles = [
-          { name: 'debate1.mp3', url: 'DROPBOX_DIRECT_URL_1' },
-          { name: 'debate2.mp3', url: 'DROPBOX_DIRECT_URL_2' },
-          { name: 'debate3.mp3', url: 'DROPBOX_DIRECT_URL_3' }
-        ];
+        // Dynamically detect MP3 files in the debates folder
+        const fs = require('fs');
+        const path = require('path');
         
-        // For now, use a static list pointing to Railway-hosted files
-        // You'll upload MP3s to /public/audio/ folder
-        const railwayFiles = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        try {
+          const debatesPath = path.join(__dirname, 'public', 'debates');
+          console.log(`📂 Scanning local debates folder: ${debatesPath}`);
+          
+          // Read directory contents
+          const files = fs.readdirSync(debatesPath);
+          
+          // Filter for MP3 files
+          const mp3Files = files
+            .filter(file => file.toLowerCase().endsWith('.mp3'))
+            .sort(); // Sort alphabetically
+          
+          console.log(`📂 Found ${mp3Files.length} MP3 files: ${mp3Files.join(', ')}`);
+          
+          if (mp3Files.length > 0) {
+            fileList = mp3Files;
+          } else {
+            console.log(`⚠️ No MP3 files found in debates folder`);
+            fileList = [];
+          }
+          
+        } catch (fsError) {
+          console.error(`❌ Error reading debates folder: ${fsError.message}`);
+          console.log(`📂 Using fallback file list`);
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
         
-        console.log(`📂 Using Railway hosting: ${railwayBaseUrl}`);
-        console.log(`📂 Expected files: ${railwayFiles.join(', ')}`);
-        
-        fileList = railwayFiles;
+        console.log(`📂 Railway debates URL base: ${railwayBaseUrl}`);
+        console.log(`📂 Final file list: ${fileList.join(', ')}`);
         
         if (fileList.length === 0) {
           twiml.say(VOICE_CONFIG, 'No MP3 files found in shared folder. Please check the folder contents.');
@@ -1241,7 +1260,7 @@ app.post('/webhook/select-channel', async (req, res) => {
         // Start playing the first file immediately with podcast-style controls
         const firstFile = fileList[0];
         
-        // Use Railway static file hosting
+        // Use Railway debates folder hosting
         const firstFileUrl = `${railwayBaseUrl}${firstFile}`;
         const filename = firstFile.replace('.mp3', '').replace(/[-_]/g, ' ');
         
@@ -2821,9 +2840,30 @@ app.all('/webhook/debate-controls', async (req, res) => {
   console.log(`🎵 Debate controls: ${digits}, currentIndex: ${currentIndex}, totalFiles: ${totalFiles}`);
   
   try {
-    // Use Railway static file hosting
-    const railwayBaseUrl = `${req.protocol}://${req.get('host')}/audio/`;
-    const fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+    // Use Railway debates folder that mirrors /Users/josephsee/audio/
+    const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+    
+    // Dynamically detect MP3 files in the debates folder
+    const fs = require('fs');
+    const path = require('path');
+    let fileList = [];
+    
+    try {
+      const debatesPath = path.join(__dirname, 'public', 'debates');
+      const files = fs.readdirSync(debatesPath);
+      const mp3Files = files
+        .filter(file => file.toLowerCase().endsWith('.mp3'))
+        .sort();
+      
+      if (mp3Files.length > 0) {
+        fileList = mp3Files;
+      } else {
+        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+      }
+    } catch (fsError) {
+      console.error(`❌ Error reading debates folder in controls: ${fsError.message}`);
+      fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+    }
   
     if (digits === '*1') {
       // Next file
