@@ -63,7 +63,8 @@ if (process.env.SIGNALWIRE_PROJECT_ID && process.env.SIGNALWIRE_AUTH_TOKEN && pr
   // SignalWire configuration
   try {
     voiceClient = twilio(process.env.SIGNALWIRE_PROJECT_ID, process.env.SIGNALWIRE_AUTH_TOKEN, {
-      accountSid: process.env.SIGNALWIRE_PROJECT_ID,
+      laml: true,
+      region: 'us1', 
       edge: process.env.SIGNALWIRE_SPACE_URL.replace('https://', '').replace('.signalwire.com', '')
     });
     voiceProvider = 'signalwire';
@@ -1442,23 +1443,42 @@ app.post('/webhook/select-channel', async (req, res) => {
         const response = await axios.get(sermonUrl, { timeout: 15000 });
         const html = response.data;
         
-        // Parse HTML to extract sermon audio links
-        // Look for audio links in the page (this may need adjustment based on site structure)
-        const audioMatches = html.match(/href="[^"]*\.mp3[^"]*"/gi) || [];
+        // Parse HTML to extract sermon audio links from data attributes
+        // Look for data-file attributes that contain audio URLs
+        const dataFileMatches = html.match(/data-file="[^"]*"/gi) || [];
+        const dataTitleMatches = html.match(/data-title="[^"]*"/gi) || [];
         let sermonFiles = [];
         
-        // Extract and clean up the audio URLs
-        audioMatches.slice(0, 10).forEach((match, index) => {
-          const audioUrl = match.match(/href="([^"]*)"/i)[1];
+        // Extract audio URLs and titles from data attributes
+        dataFileMatches.slice(0, 10).forEach((match, index) => {
+          const audioUrl = match.match(/data-file="([^"]*)"/i)[1];
+          const titleMatch = dataTitleMatches[index];
+          const title = titleMatch ? titleMatch.match(/data-title="([^"]*)"/i)[1] : `Sermon ${index + 1}`;
+          
           // Clean up relative URLs
           const fullUrl = audioUrl.startsWith('http') ? audioUrl : `https://www.pilgrimministry.org${audioUrl}`;
           
           sermonFiles.push({
             id: index + 1,
-            title: `Sermon ${index + 1}`,
+            title: title.replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
             url: fullUrl
           });
         });
+        
+        // Fallback: also try traditional href links to MP3 files
+        if (sermonFiles.length === 0) {
+          const audioMatches = html.match(/href="[^"]*\.mp3[^"]*"/gi) || [];
+          audioMatches.slice(0, 10).forEach((match, index) => {
+            const audioUrl = match.match(/href="([^"]*)"/i)[1];
+            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `https://www.pilgrimministry.org${audioUrl}`;
+            
+            sermonFiles.push({
+              id: index + 1,
+              title: `Sermon ${index + 1}`,
+              url: fullUrl
+            });
+          });
+        }
         
         console.log(`⛪ Found ${sermonFiles.length} sermon audio files`);
         
