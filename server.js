@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const axios = require('axios');
-const multer = require('multer');
 
 // Voice configuration  
 const VOICE_CONFIG = {
