@@ -1066,6 +1066,116 @@ app.get('/api/voices/british', async (req, res) => {
   }
 });
 
+// Simple file upload endpoint for debates
+app.get('/upload-debates', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Upload Debate MP3 Files</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            .upload-area { border: 2px dashed #ccc; padding: 20px; margin: 20px 0; }
+            button { background: #4CAF50; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+            .file-list { margin: 20px 0; }
+        </style>
+    </head>
+    <body>
+        <h1>🎙️ Upload Debate MP3 Files</h1>
+        <div class="upload-area">
+            <form action="/upload-debate" method="post" enctype="multipart/form-data">
+                <input type="file" name="debate" accept=".mp3" required>
+                <br><br>
+                <button type="submit">Upload MP3</button>
+            </form>
+        </div>
+        <div class="file-list">
+            <h3>Current Files:</h3>
+            <a href="/debates-list">View uploaded files</a>
+        </div>
+    </body>
+    </html>
+  `);
+});
+
+app.post('/upload-debate', (req, res) => {
+  // Simple raw body parser for file uploads
+  let data = Buffer.alloc(0);
+  req.on('data', chunk => {
+    data = Buffer.concat([data, chunk]);
+  });
+  
+  req.on('end', () => {
+    try {
+      // Ensure debates directory exists
+      const debatesDir = path.join(__dirname, 'public', 'debates');
+      if (!fs.existsSync(debatesDir)) {
+        fs.mkdirSync(debatesDir, { recursive: true });
+      }
+      
+      // Simple file upload (this is basic - in production you'd want proper multipart parsing)
+      const filename = \`debate_\${Date.now()}.mp3\`;
+      const filepath = path.join(debatesDir, filename);
+      
+      // Extract MP3 data from multipart form (basic implementation)
+      const boundary = req.headers['content-type'].split('boundary=')[1];
+      if (boundary) {
+        const parts = data.toString('binary').split('--' + boundary);
+        for (let part of parts) {
+          if (part.includes('Content-Type: audio/mpeg') || part.includes('filename=')) {
+            const headerEnd = part.indexOf('\\r\\n\\r\\n');
+            if (headerEnd !== -1) {
+              const fileData = Buffer.from(part.substring(headerEnd + 4), 'binary');
+              fs.writeFileSync(filepath, fileData);
+              
+              res.send(\`
+                <h1>✅ Upload Successful!</h1>
+                <p>File saved as: \${filename}</p>
+                <a href="/upload-debates">Upload another file</a> | 
+                <a href="/debates-list">View all files</a>
+              \`);
+              return;
+            }
+          }
+        }
+      }
+      
+      res.status(400).send('Upload failed - invalid file format');
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      res.status(500).send('Upload failed: ' + error.message);
+    }
+  });
+});
+
+// Debug endpoint to list uploaded files
+app.get('/debates-list', (req, res) => {
+  try {
+    const debatesPath = path.join(__dirname, 'public', 'debates');
+    
+    if (!fs.existsSync(debatesPath)) {
+      fs.mkdirSync(debatesPath, { recursive: true });
+    }
+    
+    const files = fs.readdirSync(debatesPath);
+    const mp3Files = files.filter(f => f.toLowerCase().endsWith('.mp3'));
+    
+    res.json({
+      path: debatesPath,
+      files: files,
+      mp3Files: mp3Files,
+      totalFiles: files.length,
+      urls: mp3Files.map(file => \`\${req.protocol}://\${req.get('host')}/debates/\${file}\`)
+    });
+  } catch (error) {
+    res.json({
+      error: error.message,
+      path: path.join(__dirname, 'public', 'debates')
+    });
+  }
+});
+
 // Initialize everything
 async function startServer() {
   try {
