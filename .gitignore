@@ -17,6 +17,8 @@ launcher-app/node_modules/
 # Audio files (too large for git/railway)
 generated_audio/
 podcast_audio/
+public/debates/*.mp3
+public/audio/*.mp3
 
 # Backup and temporary files
 package_temp.json

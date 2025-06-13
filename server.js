@@ -28,6 +28,29 @@ const port = process.env.PORT || 3000;
 app.use('/audio', express.static('public/audio'));
 app.use('/debates', express.static('public/debates'));
 
+// Debug route to list files in debates folder
+app.get('/debates-list', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  
+  try {
+    const debatesPath = path.join(__dirname, 'public', 'debates');
+    const files = fs.readdirSync(debatesPath);
+    
+    res.json({
+      path: debatesPath,
+      files: files,
+      mp3Files: files.filter(f => f.toLowerCase().endsWith('.mp3')),
+      totalFiles: files.length
+    });
+  } catch (error) {
+    res.json({
+      error: error.message,
+      path: path.join(__dirname, 'public', 'debates')
+    });
+  }
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
