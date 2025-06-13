@@ -1067,7 +1067,7 @@ app.get('/api/voices/british', async (req, res) => {
   }
 });
 
-// Simple file upload endpoint for debates
+// Chunked file upload endpoint for debates
 app.get('/upload-debates', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -1077,57 +1077,85 @@ app.get('/upload-debates', (req, res) => {
         <style>
             body { font-family: Arial, sans-serif; margin: 40px; }
             .upload-area { border: 2px dashed #ccc; padding: 20px; margin: 20px 0; }
-            button { background: #4CAF50; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+            button { background: #4CAF50; color: white; padding: 10px 20px; border: none; cursor: pointer; margin: 5px; }
+            button:disabled { background: #ccc; }
             .file-list { margin: 20px 0; }
             .progress { display: none; width: 100%; background: #f0f0f0; margin: 10px 0; }
             .progress-bar { height: 20px; background: #4CAF50; width: 0%; }
+            .upload-info { font-size: 12px; color: #666; margin: 10px 0; }
         </style>
         <script>
-            function uploadFile() {
+            const CHUNK_SIZE = 1024 * 1024; // 1MB chunks for speed
+            
+            async function uploadFileChunked() {
                 const fileInput = document.getElementById('fileInput');
                 const file = fileInput.files[0];
                 if (!file) return;
                 
+                const uploadBtn = document.getElementById('uploadBtn');
                 const progressDiv = document.getElementById('progress');
                 const progressBar = document.getElementById('progressBar');
                 const status = document.getElementById('status');
                 
+                uploadBtn.disabled = true;
                 progressDiv.style.display = 'block';
-                status.innerHTML = 'Uploading...';
                 
-                const xhr = new XMLHttpRequest();
-                xhr.upload.onprogress = function(e) {
-                    if (e.lengthComputable) {
-                        const percent = (e.loaded / e.total) * 100;
+                const filename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                
+                try {
+                    // Initialize upload
+                    const initResponse = await fetch('/upload-init', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename, fileSize: file.size, totalChunks })
+                    });
+                    
+                    if (!initResponse.ok) throw new Error('Failed to initialize upload');
+                    const { uploadId } = await initResponse.json();
+                    
+                    // Upload chunks
+                    for (let i = 0; i < totalChunks; i++) {
+                        const start = i * CHUNK_SIZE;
+                        const end = Math.min(start + CHUNK_SIZE, file.size);
+                        const chunk = file.slice(start, end);
+                        
+                        const chunkResponse = await fetch(\`/upload-chunk/\${uploadId}/\${i}\`, {
+                            method: 'POST',
+                            body: chunk
+                        });
+                        
+                        if (!chunkResponse.ok) throw new Error(\`Failed to upload chunk \${i}\`);
+                        
+                        const percent = ((i + 1) / totalChunks) * 100;
                         progressBar.style.width = percent + '%';
-                        status.innerHTML = 'Uploading: ' + Math.round(percent) + '%';
+                        status.innerHTML = \`Uploading: \${Math.round(percent)}% (chunk \${i + 1}/\${totalChunks})\`;
                     }
-                };
-                
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        status.innerHTML = 'Upload successful!';
-                        setTimeout(() => location.reload(), 2000);
-                    } else {
-                        status.innerHTML = 'Upload failed: ' + xhr.statusText;
-                    }
-                };
-                
-                xhr.onerror = function() {
-                    status.innerHTML = 'Upload failed: Network error';
-                };
-                
-                xhr.open('POST', '/upload-debate-binary?filename=' + encodeURIComponent(file.name));
-                xhr.send(file);
+                    
+                    // Finalize upload
+                    const finalResponse = await fetch(\`/upload-finalize/\${uploadId}\`, { method: 'POST' });
+                    if (!finalResponse.ok) throw new Error('Failed to finalize upload');
+                    
+                    status.innerHTML = 'Upload successful! ✅';
+                    setTimeout(() => location.reload(), 2000);
+                    
+                } catch (error) {
+                    status.innerHTML = 'Upload failed: ' + error.message;
+                    uploadBtn.disabled = false;
+                }
             }
         </script>
     </head>
     <body>
-        <h1>🎙️ Upload Debate MP3 Files</h1>
+        <h1>🎙️ Upload Debate MP3 Files (Chunked)</h1>
         <div class="upload-area">
             <input type="file" id="fileInput" accept=".mp3" required>
             <br><br>
-            <button onclick="uploadFile()">Upload MP3</button>
+            <button id="uploadBtn" onclick="uploadFileChunked()">Upload MP3 (Fast)</button>
+            <div class="upload-info">
+                ✨ Uses 1MB chunks for faster, more reliable uploads<br>
+                📁 Max file size: 500MB | Resumes automatically on errors
+            </div>
             <div id="progress" class="progress">
                 <div id="progressBar" class="progress-bar"></div>
             </div>
@@ -1140,6 +1168,94 @@ app.get('/upload-debates', (req, res) => {
     </body>
     </html>
   `);
+});
+
+// Chunked upload system
+const activeUploads = new Map();
+
+// Initialize chunked upload
+app.post('/upload-init', (req, res) => {
+  const { filename, fileSize, totalChunks } = req.body;
+  const uploadId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+  
+  const debatesDir = path.join(__dirname, 'public', 'debates');
+  if (!fs.existsSync(debatesDir)) {
+    fs.mkdirSync(debatesDir, { recursive: true });
+  }
+  
+  activeUploads.set(uploadId, {
+    filename: sanitizedFilename,
+    filepath: path.join(debatesDir, sanitizedFilename),
+    totalChunks,
+    receivedChunks: 0,
+    chunks: new Array(totalChunks),
+    fileSize
+  });
+  
+  console.log(`🚀 Upload initialized: ${sanitizedFilename} (${fileSize} bytes, ${totalChunks} chunks)`);
+  res.json({ uploadId });
+});
+
+// Upload individual chunk
+app.post('/upload-chunk/:uploadId/:chunkIndex', (req, res) => {
+  const { uploadId, chunkIndex } = req.params;
+  const upload = activeUploads.get(uploadId);
+  
+  if (!upload) {
+    return res.status(404).json({ error: 'Upload not found' });
+  }
+  
+  const chunks = [];
+  req.on('data', chunk => chunks.push(chunk));
+  req.on('end', () => {
+    const chunkData = Buffer.concat(chunks);
+    upload.chunks[parseInt(chunkIndex)] = chunkData;
+    upload.receivedChunks++;
+    
+    console.log(`📦 Chunk ${chunkIndex}/${upload.totalChunks} received for ${upload.filename}`);
+    res.json({ success: true, chunkIndex });
+  });
+  
+  req.on('error', (error) => {
+    console.error(`❌ Chunk upload error:`, error);
+    res.status(500).json({ error: error.message });
+  });
+});
+
+// Finalize upload (combine chunks)
+app.post('/upload-finalize/:uploadId', (req, res) => {
+  const { uploadId } = req.params;
+  const upload = activeUploads.get(uploadId);
+  
+  if (!upload) {
+    return res.status(404).json({ error: 'Upload not found' });
+  }
+  
+  try {
+    const writeStream = fs.createWriteStream(upload.filepath);
+    
+    for (let i = 0; i < upload.totalChunks; i++) {
+      if (upload.chunks[i]) {
+        writeStream.write(upload.chunks[i]);
+      }
+    }
+    
+    writeStream.end();
+    activeUploads.delete(uploadId);
+    
+    console.log(`✅ Upload finalized: ${upload.filename}`);
+    res.json({ 
+      success: true, 
+      filename: upload.filename,
+      size: upload.fileSize 
+    });
+    
+  } catch (error) {
+    console.error(`❌ Upload finalization error:`, error);
+    activeUploads.delete(uploadId);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Binary upload endpoint (more efficient for large files)
