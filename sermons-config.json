@@ -1,20 +1,20 @@
 {
   "sermons": [
     {
-      "title": "The Gospel of Grace",
-      "url": "https://example.com/sermon1.mp3",
-      "description": "A message about God's amazing grace"
+      "title": "Sample Sermon - The Gospel of Grace",
+      "url": "https://file-examples.com/storage/fe68c1fa8eea98e14f09f2b/2017/11/file_example_MP3_700KB.mp3",
+      "description": "A sample audio file for testing"
     },
     {
-      "title": "Faith and Works", 
-      "url": "https://example.com/sermon2.mp3",
-      "description": "Understanding the relationship between faith and works"
+      "title": "Sample Sermon - Faith and Works", 
+      "url": "https://www.learningcontainer.com/wp-content/uploads/2020/02/Kalimba.mp3",
+      "description": "Another sample audio file for testing"
     },
     {
-      "title": "The Great Commission",
-      "url": "https://example.com/sermon3.mp3",
-      "description": "Our calling to spread the gospel"
+      "title": "Sample Sermon - The Great Commission",
+      "url": "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3",
+      "description": "A third sample audio file for testing"
     }
   ],
-  "instructions": "Replace the example URLs above with actual sermon MP3 file URLs. You can host sermons on cloud storage (Google Drive, Dropbox, etc.) and use direct download links."
+  "instructions": "These are working test URLs. Replace with actual sermon MP3 file URLs when available. You can host sermons on cloud storage (Google Drive, Dropbox, etc.) and use direct download links."
 }

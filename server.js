@@ -209,6 +209,7 @@ async function getWeatherForecast(zipcode) {
         const description = current.weather[0].description;
         const humidity = current.main.humidity;
         const windSpeed = Math.round(current.wind.speed);
+        const currentPrecipitation = current.pop ? Math.round(current.pop * 100) : 0;
         
         // Group forecasts by day
         const dailyForecasts = {};
@@ -223,16 +224,23 @@ async function getWeatherForecast(zipcode) {
                     date: dateStr,
                     temps: [],
                     conditions: [],
+                    precipitation: [],
                     dayName: date.toLocaleDateString('en-US', { weekday: 'long' })
                 };
             }
             
             dailyForecasts[dateStr].temps.push(item.main.temp);
             dailyForecasts[dateStr].conditions.push(item.weather[0].description);
+            dailyForecasts[dateStr].precipitation.push(item.pop || 0);
         });
         
         // Build multi-day forecast
         let weatherReport = `Weather forecast for ${name}. Currently ${currentTemp} degrees, feels like ${feelsLike}. Current conditions: ${description}. Humidity ${humidity} percent, wind ${windSpeed} miles per hour. `;
+        
+        // Add current precipitation chance if significant
+        if (currentPrecipitation >= 20) {
+            weatherReport += `Chance of precipitation: ${currentPrecipitation} percent. `;
+        }
         
         // Add daily forecasts for next 4-5 days
         const days = Object.values(dailyForecasts).slice(0, 5);
@@ -244,13 +252,31 @@ async function getWeatherForecast(zipcode) {
                 day.conditions.filter(v => v===a).length - day.conditions.filter(v => v===b).length
             ).pop();
             
+            // Calculate average precipitation chance for the day
+            const avgPrecipitation = Math.round((day.precipitation.reduce((a, b) => a + b, 0) / day.precipitation.length) * 100);
+            
+            // Check if precipitation is likely
+            const isPrecipitationLikely = avgPrecipitation >= 20 || 
+                mostCommonCondition.includes('rain') || 
+                mostCommonCondition.includes('snow') || 
+                mostCommonCondition.includes('drizzle') ||
+                mostCommonCondition.includes('shower');
+            
+            let dayForecast = '';
             if (index === 0) {
-                weatherReport += `Today's high ${high}, low ${low}, expecting ${mostCommonCondition}. `;
+                dayForecast = `Today's high ${high}, low ${low}, expecting ${mostCommonCondition}`;
             } else if (index === 1) {
-                weatherReport += `Tomorrow, ${day.dayName}, high ${high}, low ${low}, ${mostCommonCondition}. `;
+                dayForecast = `Tomorrow, ${day.dayName}, high ${high}, low ${low}, ${mostCommonCondition}`;
             } else {
-                weatherReport += `${day.dayName}, high ${high}, low ${low}, ${mostCommonCondition}. `;
+                dayForecast = `${day.dayName}, high ${high}, low ${low}, ${mostCommonCondition}`;
             }
+            
+            // Add precipitation chance if significant
+            if (isPrecipitationLikely) {
+                dayForecast += `, ${avgPrecipitation} percent chance of precipitation`;
+            }
+            
+            weatherReport += dayForecast + '. ';
         });
         
         console.log(`✅ Weather report generated for ${name}`);
@@ -1649,29 +1675,28 @@ app.post('/webhook/select-channel', async (req, res) => {
       
       try {
         // Scrape sermons from https://www.pilgrimministry.org/allsermons
-        // Try the AJAX endpoint first (where the actual sermon data is loaded)
+        // Try the sermons directory page (has actual download links)
         let html = '';
-        let sermonUrl = 'https://www.pilgrimministry.org/ajaxsermons?page=1';
-        console.log(`📡 Fetching sermons from AJAX endpoint: ${sermonUrl}`);
+        let sermonUrl = 'https://www.pilgrimministry.org/sermons/';
+        console.log(`📡 Fetching sermons from directory: ${sermonUrl}`);
         
         try {
-          const ajaxResponse = await axios.get(sermonUrl, { 
+          const response = await axios.get(sermonUrl, { 
             timeout: 15000,
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.5',
               'Accept-Encoding': 'gzip, deflate, br',
-              'Referer': 'https://www.pilgrimministry.org/allsermons',
               'Connection': 'keep-alive',
               'Upgrade-Insecure-Requests': '1'
             }
           });
-          html = ajaxResponse.data;
-          console.log('✅ Successfully accessed AJAX endpoint');
-        } catch (ajaxError) {
-          console.log('⚠️ AJAX endpoint failed, trying main page:', ajaxError.message);
-          // Fallback to main page
+          html = response.data;
+          console.log('✅ Successfully accessed sermons directory');
+        } catch (sermonError) {
+          console.log('⚠️ Sermons directory failed, trying allsermons page:', sermonError.message);
+          // Fallback to allsermons page
           sermonUrl = 'https://www.pilgrimministry.org/allsermons';
           const response = await axios.get(sermonUrl, { 
             timeout: 15000,
@@ -1711,20 +1736,46 @@ app.post('/webhook/select-channel', async (req, res) => {
           });
         });
         
-        // Method 2: Look for direct MP3 links
+        // Method 2: Look for download links and direct MP3 links
         if (sermonFiles.length === 0) {
-          const audioMatches = html.match(/href="[^"]*\.mp3[^"]*"/gi) || 
-                              html.match(/src="[^"]*\.mp3[^"]*"/gi) || 
-                              html.match(/"[^"]*\.mp3[^"]*"/gi) || [];
+          // Look for download links that might point to MP3 files
+          const downloadMatches = html.match(/href="[^"]*download[^"]*"/gi) || 
+                                 html.match(/href="[^"]*\.mp3[^"]*"/gi) || 
+                                 html.match(/src="[^"]*\.mp3[^"]*"/gi) || 
+                                 html.match(/"[^"]*\.mp3[^"]*"/gi) || [];
           
-          audioMatches.slice(0, 10).forEach((match, index) => {
+          console.log(`🔗 Found ${downloadMatches.length} potential download/audio links`);
+          
+          downloadMatches.slice(0, 10).forEach((match, index) => {
             const audioUrl = match.match(/"([^"]*)"/i)[1];
             const fullUrl = audioUrl.startsWith('http') ? audioUrl : `https://www.pilgrimministry.org${audioUrl}`;
+            
+            console.log(`🎵 Found potential audio URL: ${fullUrl}`);
             
             sermonFiles.push({
               id: index + 1,
               title: `Sermon ${index + 1}`,
               url: fullUrl
+            });
+          });
+        }
+        
+        // Method 2b: Look for sermon titles with associated links
+        if (sermonFiles.length === 0) {
+          // Try to extract sermon titles and their associated download/play URLs
+          const titleMatches = html.match(/<h[1-6][^>]*>[^<]*sermon[^<]*<\/h[1-6]>/gi) || 
+                              html.match(/title="[^"]*sermon[^"]*"/gi) || [];
+          
+          console.log(`📰 Found ${titleMatches.length} potential sermon titles`);
+          
+          titleMatches.slice(0, 10).forEach((match, index) => {
+            // Extract title text
+            const titleText = match.replace(/<[^>]*>/g, '').replace(/title="/gi, '').replace(/"/g, '');
+            
+            sermonFiles.push({
+              id: index + 1,
+              title: titleText.trim() || `Sermon ${index + 1}`,
+              url: `https://www.pilgrimministry.org/sermons/sermon${index + 1}.mp3` // Guessed URL pattern
             });
           });
         }
