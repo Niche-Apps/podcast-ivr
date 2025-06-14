@@ -1,0 +1,20 @@
+{
+  "sermons": [
+    {
+      "title": "The Gospel of Grace",
+      "url": "https://example.com/sermon1.mp3",
+      "description": "A message about God's amazing grace"
+    },
+    {
+      "title": "Faith and Works", 
+      "url": "https://example.com/sermon2.mp3",
+      "description": "Understanding the relationship between faith and works"
+    },
+    {
+      "title": "The Great Commission",
+      "url": "https://example.com/sermon3.mp3",
+      "description": "Our calling to spread the gospel"
+    }
+  ],
+  "instructions": "Replace the example URLs above with actual sermon MP3 file URLs. You can host sermons on cloud storage (Google Drive, Dropbox, etc.) and use direct download links."
+}

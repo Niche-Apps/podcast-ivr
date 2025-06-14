@@ -1649,19 +1649,53 @@ app.post('/webhook/select-channel', async (req, res) => {
       
       try {
         // Scrape sermons from https://www.pilgrimministry.org/allsermons
-        const sermonUrl = 'https://www.pilgrimministry.org/allsermons';
-        console.log(`📡 Fetching sermons from: ${sermonUrl}`);
+        // Try the AJAX endpoint first (where the actual sermon data is loaded)
+        let html = '';
+        let sermonUrl = 'https://www.pilgrimministry.org/ajaxsermons?page=1';
+        console.log(`📡 Fetching sermons from AJAX endpoint: ${sermonUrl}`);
         
-        const response = await axios.get(sermonUrl, { timeout: 15000 });
-        const html = response.data;
+        try {
+          const ajaxResponse = await axios.get(sermonUrl, { 
+            timeout: 15000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+              'Accept-Encoding': 'gzip, deflate, br',
+              'Referer': 'https://www.pilgrimministry.org/allsermons',
+              'Connection': 'keep-alive',
+              'Upgrade-Insecure-Requests': '1'
+            }
+          });
+          html = ajaxResponse.data;
+          console.log('✅ Successfully accessed AJAX endpoint');
+        } catch (ajaxError) {
+          console.log('⚠️ AJAX endpoint failed, trying main page:', ajaxError.message);
+          // Fallback to main page
+          sermonUrl = 'https://www.pilgrimministry.org/allsermons';
+          const response = await axios.get(sermonUrl, { 
+            timeout: 15000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Referer': 'https://www.pilgrimministry.org/'
+            }
+          });
+          html = response.data;
+        }
         
-        // Parse HTML to extract sermon audio links from data attributes
-        // Look for data-file attributes that contain audio URLs
-        const dataFileMatches = html.match(/data-file="[^"]*"/gi) || [];
-        const dataTitleMatches = html.match(/data-title="[^"]*"/gi) || [];
+        // Try multiple scraping approaches for sermon audio
         let sermonFiles = [];
         
-        // Extract audio URLs and titles from data attributes
+        // Debug: Log some of the HTML content to understand structure
+        console.log(`📄 HTML sample (first 500 chars): ${html.substring(0, 500)}`);
+        
+        // Method 1: Look for data-file attributes that contain audio URLs
+        const dataFileMatches = html.match(/data-file="[^"]*"/gi) || [];
+        const dataTitleMatches = html.match(/data-title="[^"]*"/gi) || [];
+        
+        console.log(`🔍 Found ${dataFileMatches.length} data-file matches and ${dataTitleMatches.length} title matches`);
+        
         dataFileMatches.slice(0, 10).forEach((match, index) => {
           const audioUrl = match.match(/data-file="([^"]*)"/i)[1];
           const titleMatch = dataTitleMatches[index];
@@ -1677,11 +1711,31 @@ app.post('/webhook/select-channel', async (req, res) => {
           });
         });
         
-        // Fallback: also try traditional href links to MP3 files
+        // Method 2: Look for direct MP3 links
         if (sermonFiles.length === 0) {
-          const audioMatches = html.match(/href="[^"]*\.mp3[^"]*"/gi) || [];
+          const audioMatches = html.match(/href="[^"]*\.mp3[^"]*"/gi) || 
+                              html.match(/src="[^"]*\.mp3[^"]*"/gi) || 
+                              html.match(/"[^"]*\.mp3[^"]*"/gi) || [];
+          
           audioMatches.slice(0, 10).forEach((match, index) => {
-            const audioUrl = match.match(/href="([^"]*)"/i)[1];
+            const audioUrl = match.match(/"([^"]*)"/i)[1];
+            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `https://www.pilgrimministry.org${audioUrl}`;
+            
+            sermonFiles.push({
+              id: index + 1,
+              title: `Sermon ${index + 1}`,
+              url: fullUrl
+            });
+          });
+        }
+        
+        // Method 3: Look for JavaScript variables containing audio data
+        if (sermonFiles.length === 0) {
+          const jsAudioMatches = html.match(/audio\s*=\s*"[^"]*\.mp3[^"]*"/gi) || 
+                                html.match(/song\s*=\s*"[^"]*\.mp3[^"]*"/gi) || [];
+          
+          jsAudioMatches.slice(0, 10).forEach((match, index) => {
+            const audioUrl = match.match(/"([^"]*)"/i)[1];
             const fullUrl = audioUrl.startsWith('http') ? audioUrl : `https://www.pilgrimministry.org${audioUrl}`;
             
             sermonFiles.push({
@@ -1694,26 +1748,38 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         console.log(`⛪ Found ${sermonFiles.length} sermon audio files`);
         
-        // Fallback: Create sample sermons if none found
+        // Fallback: Use manual sermon configuration or test content
         if (sermonFiles.length === 0) {
-          console.log('⛪ No sermons found via scraping, using fallback sample sermons');
-          sermonFiles = [
-            {
-              id: 1,
-              title: 'Sample Sermon 1',
-              url: 'https://www.pilgrimministry.org/sample1.mp3'
-            },
-            {
-              id: 2,
-              title: 'Sample Sermon 2', 
-              url: 'https://www.pilgrimministry.org/sample2.mp3'
-            },
-            {
-              id: 3,
-              title: 'Sample Sermon 3',
-              url: 'https://www.pilgrimministry.org/sample3.mp3'
-            }
-          ];
+          console.log('⛪ No sermons found via scraping, trying manual configuration');
+          
+          try {
+            const sermonConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'sermons-config.json'), 'utf8'));
+            sermonFiles = sermonConfig.sermons.map((sermon, index) => ({
+              id: index + 1,
+              title: sermon.title,
+              url: sermon.url
+            }));
+            console.log(`⛪ Loaded ${sermonFiles.length} sermons from manual configuration`);
+          } catch (error) {
+            console.log('⛪ No manual configuration found, using test audio');
+            sermonFiles = [
+              {
+                id: 1,
+                title: 'Sermon: The Gospel of Grace',
+                url: 'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3'
+              },
+              {
+                id: 2,
+                title: 'Sermon: Faith and Works', 
+                url: 'https://www.soundjay.com/misc/sounds/church-bell-1.mp3'
+              },
+              {
+                id: 3,
+                title: 'Sermon: The Great Commission',
+                url: 'https://file-examples.com/storage/fe68c1fa8eea98e14f09f2b/2017/11/file_example_MP3_700KB.mp3'
+              }
+            ];
+          }
         }
         
         if (sermonFiles.length === 0) {
