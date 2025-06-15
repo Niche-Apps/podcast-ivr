@@ -80,6 +80,11 @@
       "rssUrl": "https://feeds.libsyn.com/574450/rss",
       "description": "Tim Pool's live evening show"
     },
+    "18": {
+      "name": "Bible Thinker",
+      "rssUrl": "https://feeds.castos.com/41z28",
+      "description": "Biblical theology and apologetics"
+    },
     "20": {
       "name": "Morning Wire",
       "rssUrl": "https://feeds.simplecast.com/WCb5SgYj",
@@ -93,9 +98,9 @@
   },
   "extensions": {
     "21": {
-      "name": "Tucker Carlson",
-      "rssUrl": "https://feeds.megaphone.fm/tucker-carlson-show",
-      "description": "Tucker Carlson Network"
+      "name": "Jimmy Akin's Mysterious World",
+      "rssUrl": "https://feeds.sqpn.com/mysterious",
+      "description": "Catholic apologetics and mysteries"
     },
     "22": {
       "name": "Dan Bongino Show",
@@ -166,8 +171,8 @@
     }
   },
   "metadata": {
-    "lastUpdated": "2025-06-08",
-    "totalFeeds": 33,
+    "lastUpdated": "2025-06-15",
+    "totalFeeds": 35,
     "categories": ["news", "conservative", "philosophy", "entertainment", "feedback"],
     "notes": [
       "Extensions (21-30) are ready to add but not active in main menu",

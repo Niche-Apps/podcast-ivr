@@ -1,6 +1,6 @@
 {
   "mainMenu": {
-    "greeting": "Podcast Hotline. Press 1 for weather forecast, 2 for NPR News, 3 for This American Life, 4 for The Daily, 5 for Serial, 6 for Matt Walsh, 7 for Ben Shapiro, 8 for Michael Knowles, 9 for Andrew Klavan, 10 for Pints with Aquinas, 11 for Joe Rogan, 12 for Jordan Peterson, 13 for Crowder, 14 for Lex Fridman, 15 for TimCast IRL, 20 for Morning Wire, 90 to leave feedback, or star to repeat.",
+    "greeting": "Podcast Hotline. Press 1 for weather forecast, 2 for NPR News, 3 for This American Life, 4 for The Daily, 5 for Serial, 6 for Matt Walsh, 7 for Ben Shapiro, 8 for Michael Knowles, 9 for Andrew Klavan, 10 for Pints with Aquinas, 11 for Joe Rogan, 12 for Jordan Peterson, 13 for Crowder, 14 for Lex Fridman, 15 for TimCast IRL, 18 for Bible Thinker, 20 for Morning Wire, 21 for Jimmy Akin, 90 to leave feedback, or star to repeat.",
     "noResponse": "We didn't receive your selection. Please call back and try again.",
     "invalidSelection": "Invalid selection. Please try again."
   },

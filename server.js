@@ -335,6 +335,26 @@ async function getWeatherForecast(zipcode) {
     }
 }
 
+// Test if a podcast URL supports byte-range seeking
+async function testSeekingSupport(url) {
+  try {
+    const testResponse = await axios({
+      method: 'HEAD',
+      url: url,
+      timeout: 3000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
+        'Range': 'bytes=1000-2000'
+      }
+    });
+    
+    return testResponse.status === 206;
+  } catch (error) {
+    console.log(`⚠️ Seeking test failed: ${error.message}`);
+    return false;
+  }
+}
+
 // Enhanced URL cleaning function to handle complex redirect chains
 function cleanAudioUrl(url) {
     if (!url || typeof url !== 'string') return url;
@@ -2190,12 +2210,13 @@ app.get('/api/feeds/list', (req, res) => {
 });
 
 // Audio proxy endpoint with byte-range support for seeking
-app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
+app.get('/proxy-audio/:encodedUrl/:type?/:startTime?/:speedType?/:speed?', async (req, res) => {
   try {
-    let { encodedUrl, type, startTime } = req.params;
+    let { encodedUrl, type, startTime, speedType, speed } = req.params;
     const seekTime = type === 'start' ? parseInt(startTime) || 0 : parseInt(req.query.start) || 0;
+    const playbackSpeed = (speedType === 'speed' ? parseFloat(speed) : null) || (type === 'speed' ? parseFloat(startTime) : null) || 1.0;
     
-    console.log(`🎵 Proxy request: type=${type}, startTime=${startTime}, seekTime=${seekTime}`);
+    console.log(`🎵 Proxy request: type=${type}, startTime=${startTime}, seekTime=${seekTime}, speed=${playbackSpeed}x`);
     
     // Remove any query parameters from the encoded URL path
     encodedUrl = encodedUrl.split('?')[0];
@@ -2277,6 +2298,15 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
     // Check if seeking was requested but CDN didn't support it
     if (seekTime > 0 && audioResponse.status === 200) {
       console.log(`⚠️ Range request ignored by CDN, got full content instead of partial`);
+      // When CDN doesn't support ranges, we need to inform the client that seeking failed
+      // Return a 416 status to indicate range not satisfiable, which will trigger fallback behavior
+      return res.status(416).json({
+        error: 'Seeking not supported by audio source',
+        message: 'This podcast source does not support seeking. Playback will continue from current position.',
+        seekTime: seekTime,
+        speed: playbackSpeed,
+        fallbackUrl: `https://${req.get('host')}/proxy-audio/${encodedUrl}${playbackSpeed !== 1 ? `/speed/${playbackSpeed}` : ''}` // URL without seek parameter but with speed
+      });
     }
     
     // Set headers for streaming - optimized for Twilio compatibility
@@ -2287,6 +2317,9 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
     // Add Twilio-friendly headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Playback-Speed', playbackSpeed);
+    res.setHeader('X-Seek-Time', seekTime);
+    res.setHeader('X-Proxy-Source', 'podcast-ivr-proxy');
     
     if (audioResponse.headers['content-length']) {
       const contentLength = parseInt(audioResponse.headers['content-length']);
@@ -2385,10 +2418,11 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?', async (req, res) => {
 });
 
 // Debug endpoint to test proxy URL construction
-app.get('/debug-proxy/:encodedUrl/:type?/:startTime?', async (req, res) => {
+app.get('/debug-proxy/:encodedUrl/:type?/:startTime?/:speedType?/:speed?', async (req, res) => {
   try {
-    let { encodedUrl, type, startTime } = req.params;
+    let { encodedUrl, type, startTime, speedType, speed } = req.params;
     const seekTime = type === 'start' ? parseInt(startTime) || 0 : parseInt(req.query.start) || 0;
+    const playbackSpeed = (speedType === 'speed' ? parseFloat(speed) : null) || (type === 'speed' ? parseFloat(startTime) : null) || 1.0;
     
     encodedUrl = encodedUrl.split('?')[0];
     const originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
@@ -2398,6 +2432,8 @@ app.get('/debug-proxy/:encodedUrl/:type?/:startTime?', async (req, res) => {
       type,
       startTime,
       seekTime,
+      speedType,
+      speed: playbackSpeed,
       originalUrl,
       timestamp: new Date().toISOString()
     });
@@ -3091,7 +3127,33 @@ app.post('/webhook/playback-control', async (req, res) => {
         const backPosition = Math.max(0, actualPosition - 30);
         console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
         twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
-        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
+        
+        // Test if seeking is supported for this episode before attempting
+        const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
+        if (podcast) {
+          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+          const episode = episodes[episodeIndex];
+          if (episode) {
+            const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+            const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+            
+            // Test if seeking is supported for this episode
+            const seekingSupported = await testSeekingSupport(cleanedUrl);
+            
+            if (seekingSupported) {
+              // Range requests supported, proceed with seeking
+              twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
+            } else {
+              // Range requests not supported
+              twiml.say(VOICE_CONFIG, 'Seeking is not supported for this episode. Continuing current playback.');
+              twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
+            }
+          } else {
+            throw new Error('Episode not found');
+          }
+        } else {
+          throw new Error('Podcast not found');
+        }
       } catch (error) {
         console.error(`❌ Rewind error:`, error.message);
         twiml.say(VOICE_CONFIG, 'Rewind failed. Continuing current playback.');
@@ -3104,7 +3166,33 @@ app.post('/webhook/playback-control', async (req, res) => {
         const forwardPosition = actualPosition + 30;
         console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
         twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
-        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
+        
+        // Test if seeking is supported for this episode before attempting
+        const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
+        if (podcast) {
+          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+          const episode = episodes[episodeIndex];
+          if (episode) {
+            const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+            const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+            
+            // Test if seeking is supported for this episode
+            const seekingSupported = await testSeekingSupport(cleanedUrl);
+            
+            if (seekingSupported) {
+              // Range requests supported, proceed with seeking
+              twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
+            } else {
+              // Range requests not supported
+              twiml.say(VOICE_CONFIG, 'Seeking is not supported for this episode. Continuing current playback.');
+              twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
+            }
+          } else {
+            throw new Error('Episode not found');
+          }
+        } else {
+          throw new Error('Podcast not found');
+        }
       } catch (error) {
         console.error(`❌ Fast forward error:`, error.message);
         twiml.say(VOICE_CONFIG, 'Fast forward failed. Continuing current playback.');
@@ -3118,8 +3206,24 @@ app.post('/webhook/playback-control', async (req, res) => {
         const newSpeed = Math.max(0.5, currentSpeed - 0.25); // Min 0.5x speed
         callerSessions.updatePlaybackSpeed(callerId, newSpeed);
         console.log(`🐌 Speed decreased: ${currentSpeed}x -> ${newSpeed}x`);
-        twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSpeed} times normal.`);
-        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}`);
+        
+        // Get current episode for speed-adjusted playback
+        const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
+        if (podcast) {
+          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+          const episode = episodes[episodeIndex];
+          if (episode) {
+            // Update position and restart with new speed
+            callerSessions.updatePosition(callerId, channel, episode.audioUrl, actualPosition, episode.title);
+            twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSpeed} times normal.`);
+            twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
+            break;
+          }
+        }
+        
+        // Fallback if episode fetch fails
+        twiml.say(VOICE_CONFIG, `Speed set to ${newSpeed} times normal. This will take effect on the next episode.`);
+        twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
       } catch (error) {
         console.error(`❌ Speed decrease error:`, error.message);
         twiml.say(VOICE_CONFIG, 'Speed change failed. Continuing current playback.');
@@ -3133,8 +3237,24 @@ app.post('/webhook/playback-control', async (req, res) => {
         const newSpeed = Math.min(2.0, currentSpeed + 0.25); // Max 2x speed
         callerSessions.updatePlaybackSpeed(callerId, newSpeed);
         console.log(`🏃 Speed increased: ${currentSpeed}x -> ${newSpeed}x`);
-        twiml.say(VOICE_CONFIG, `Playback speed increased to ${newSpeed} times normal.`);
-        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}`);
+        
+        // Get current episode for speed-adjusted playback
+        const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
+        if (podcast) {
+          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+          const episode = episodes[episodeIndex];
+          if (episode) {
+            // Update position and restart with new speed
+            callerSessions.updatePosition(callerId, channel, episode.audioUrl, actualPosition, episode.title);
+            twiml.say(VOICE_CONFIG, `Playback speed increased to ${newSpeed} times normal.`);
+            twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
+            break;
+          }
+        }
+        
+        // Fallback if episode fetch fails
+        twiml.say(VOICE_CONFIG, `Speed set to ${newSpeed} times normal. This will take effect on the next episode.`);
+        twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
       } catch (error) {
         console.error(`❌ Speed increase error:`, error.message);
         twiml.say(VOICE_CONFIG, 'Speed change failed. Continuing current playback.');
@@ -3208,12 +3328,30 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
     
-    // Clean the URL and start pre-loading
+    // Clean the URL and check if seeking is supported
     const cleanedUrl = cleanAudioUrl(episode.audioUrl);
     const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}`;
     
-    // Pre-load check while announcing position for faster seeking
+    // Test if seeking is supported before constructing seek URL
+    let playUrl;
+    let seekingSupported = false;
+    
+    if (position > 0) {
+      seekingSupported = await testSeekingSupport(cleanedUrl);
+      
+      if (seekingSupported) {
+        playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}`;
+        console.log(`✅ Seeking supported, using seek URL: ${position}s`);
+      } else {
+        playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+        console.log(`⚠️ Seeking not supported, using full stream URL`);
+      }
+    } else {
+      // Starting from beginning, no need to test seeking
+      playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+    }
+    
+    // Pre-load check while announcing position for faster playback
     const preloadPromise = axios.head(cleanedUrl, {
       timeout: 2000,
       headers: {
@@ -3221,13 +3359,17 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
         'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
       }
     }).catch(err => {
-      console.log(`🔄 Seek preload: ${err.message || 'completed'}`);
+      console.log(`🔄 Preload check: ${err.message || 'completed'}`);
     });
     
     // Announce position if not at start (gives time for preloading)
     if (position > 0) {
       const positionMins = Math.floor(position / 60);
-      twiml.say(VOICE_CONFIG, `Resuming at ${positionMins} minutes.`);
+      if (seekingSupported) {
+        twiml.say(VOICE_CONFIG, `Resuming at ${positionMins} minutes.`);
+      } else {
+        twiml.say(VOICE_CONFIG, `Seeking not supported for this episode. Playing from the beginning.`);
+      }
     }
     
     // Set up gather with position tracking
@@ -3247,6 +3389,77 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
     
   } catch (error) {
     console.error(`❌ Error playing episode at position:`, error.message);
+    twiml.say(VOICE_CONFIG, 'There was an issue with playback. Returning to main menu.');
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Play episode with specific speed setting using TwiML rate parameter
+app.all('/webhook/play-episode-with-speed', async (req, res) => {
+  const channel = req.query.channel || req.body.channel;
+  const episodeIndex = parseInt(req.query.episodeIndex || req.body.episodeIndex) || 0;
+  const position = parseInt(req.query.position || req.body.position) || 0;
+  const speed = parseFloat(req.query.speed || req.body.speed) || 1.25;
+  const callerId = req.body.From || req.body.Caller;
+  
+  console.log(`=== PLAYING EPISODE WITH SPEED ===`);
+  console.log(`Channel: ${channel}, Episode: ${episodeIndex}, Position: ${position}s, Speed: ${speed}x`);
+  
+  const twiml = new VoiceResponse();
+  
+  const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
+  if (!podcast) {
+    twiml.say(VOICE_CONFIG, 'Invalid channel.');
+    twiml.redirect('/webhook/ivr-main');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  try {
+    const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    
+    if (!episodes || episodes.length === 0) {
+      twiml.say(VOICE_CONFIG, `No episodes available for ${podcast.name}.`);
+      twiml.redirect('/webhook/ivr-main');
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    const episode = episodes[episodeIndex];
+    if (!episode) {
+      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0`);
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // Clean the URL and encode it with speed parameter
+    const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+    const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+    const playUrl = position > 0 ? 
+      `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}/speed/${speed}` :
+      `https://${req.get('host')}/proxy-audio/${encodedUrl}/speed/${speed}`;
+    
+    console.log(`🎵 Playing with speed ${speed}x: ${episode.title}`);
+    
+    // Set up gather with position tracking and speed-adjusted timing
+    const gather = twiml.gather({
+      numDigits: 1,
+      action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${position}&startTime=${Date.now()}`,
+      method: 'POST',
+      timeout: 30
+    });
+    
+    // Play the episode with speed adjustment
+    gather.play({ loop: 1 }, playUrl);
+    gather.say(VOICE_CONFIG, `Press 1 for previous episode, 3 for next episode, 4 to skip back, 6 to skip forward, 2 or 5 to change speed, or 0 for menu.`);
+    
+    // Continue with updated position after timeout (adjusted for playback speed)
+    const speedAdjustedDuration = Math.floor(30 / speed); // Adjust timeout for speed
+    const nextPosition = position + speedAdjustedDuration;
+    twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${nextPosition}&startTime=${Date.now()}`);
+    
+  } catch (error) {
+    console.error(`❌ Error playing episode with speed:`, error.message);
     twiml.say(VOICE_CONFIG, 'There was an issue with playback. Returning to main menu.');
     twiml.redirect('/webhook/ivr-main');
   }
