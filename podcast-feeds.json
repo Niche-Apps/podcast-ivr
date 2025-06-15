@@ -151,6 +151,11 @@
       "name": "Debates",
       "rssUrl": "YOUTUBE_DEBATES",
       "description": "Political and policy debates from YouTube"
+    },
+    "90": {
+      "name": "Ad Contact System",
+      "rssUrl": "AD_CONTACT_SERVICE",
+      "description": "Contact system for advertising inquiries and partnerships"
     }
   },
   "testing": {
