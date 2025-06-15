@@ -19,7 +19,11 @@
     "zipcodeNotFound": "Sorry, I couldn't find weather information for zipcode {zipcode}. Please make sure you entered a valid US zipcode.",
     "options": "Press 1 to hear the forecast again, 2 for a different zipcode, or any other key to return to the main menu.",
     "repeatPrompt": "Please enter your zipcode again to hear the forecast.",
-    "differentZipcode": "Please enter a different zipcode."
+    "differentZipcode": "Please enter a different zipcode.",
+    "welcomeBack": "Welcome back! I remember your zipcode is {zipcode}. Press 1 to use this zipcode, or 2 to enter a different one.",
+    "usingSavedZipcode": "Using your saved zipcode {zipcode}.",
+    "zipcodeUpdated": "I'll remember zipcode {zipcode} for next time.",
+    "adMessage": "This weather report is brought to you by our sponsor."
   },
   
   "podcasts": {
@@ -84,9 +88,9 @@
   },
   
   "metadata": {
-    "lastUpdated": "2025-06-08",
-    "version": "1.1",
-    "totalPrompts": 43,
+    "lastUpdated": "2025-06-15",
+    "version": "1.2",
+    "totalPrompts": 47,
     "categories": [
       "mainMenu",
       "systemTest", 

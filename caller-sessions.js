@@ -138,6 +138,56 @@ class CallerSessions {
     }
   }
 
+  // Update caller's zipcode preference
+  updateZipcode(phoneNumber, zipcode) {
+    const sessionKey = this.getSessionKey(phoneNumber);
+    
+    if (!this.sessions[sessionKey]) {
+      this.sessions[sessionKey] = {
+        phoneNumber,
+        lastUpdated: Date.now()
+      };
+    }
+    
+    this.sessions[sessionKey].weatherZipcode = zipcode;
+    this.sessions[sessionKey].lastUpdated = Date.now();
+    
+    this.saveSessions();
+    console.log(`📍 Updated zipcode for ${phoneNumber}: ${zipcode}`);
+  }
+
+  // Get caller's saved zipcode
+  getSavedZipcode(phoneNumber) {
+    const sessionKey = this.getSessionKey(phoneNumber);
+    const session = this.sessions[sessionKey];
+    
+    if (!session) return null;
+    
+    // Check if session is recent (within 30 days for weather preferences)
+    const daysSinceLastUpdate = (Date.now() - session.lastUpdated) / (1000 * 60 * 60 * 24);
+    if (daysSinceLastUpdate > 30) {
+      return null;
+    }
+    
+    return session.weatherZipcode || null;
+  }
+
+  // Check if caller has a saved zipcode
+  hasSavedZipcode(phoneNumber) {
+    return this.getSavedZipcode(phoneNumber) !== null;
+  }
+
+  // Generate zipcode memory prompt for TwiML
+  generateZipcodePrompt(phoneNumber) {
+    const savedZipcode = this.getSavedZipcode(phoneNumber);
+    if (!savedZipcode) return null;
+    
+    return {
+      prompt: `Welcome back! I remember your zipcode is ${savedZipcode.split('').join(' ')}. Press 1 to use this zipcode, or 2 to enter a different one.`,
+      zipcode: savedZipcode
+    };
+  }
+
   // Get session statistics
   getStats() {
     const sessions = Object.values(this.sessions);
@@ -147,6 +197,7 @@ class CallerSessions {
       totalSessions: sessions.length,
       activeSessions: sessions.filter(s => (now - s.lastUpdated) < 24 * 60 * 60 * 1000).length, // Last 24h
       averagePosition: sessions.length > 0 ? Math.round(sessions.reduce((sum, s) => sum + s.positionSeconds, 0) / sessions.length) : 0,
+      savedZipcodes: sessions.filter(s => s.weatherZipcode).length,
       speedPreferences: {
         '1x': sessions.filter(s => s.playbackSpeed === 1).length,
         '1.25x': sessions.filter(s => s.playbackSpeed === 1.25).length,

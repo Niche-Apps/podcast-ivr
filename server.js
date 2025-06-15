@@ -1562,6 +1562,23 @@ app.post('/webhook/select-channel', async (req, res) => {
   // Track selection
   trackPodcastSelection(digits, caller, req.body.CallSid);
   
+  // Check for resumable session at extension level
+  const callerId = req.body.From || req.body.Caller;
+  const lastSession = callerSessions.getLastPosition(callerId);
+  
+  if (lastSession && lastSession.channelId === digits && callerSessions.hasResumableSession(callerId)) {
+    console.log(`🔄 Offering resume for ${callerId} in ${selectedPodcast.name}`);
+    const resumePrompt = callerSessions.generateResumePrompt(callerId);
+    
+    twiml.say(VOICE_CONFIG, resumePrompt.prompt);
+    const resumeGather = twiml.gather({
+      numDigits: 1,
+      timeout: 10,
+      action: `/webhook/extension-resume-choice?channel=${digits}&resumePosition=${lastSession.positionSeconds}`
+    });
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
   try {
     console.log(`🔍 Fetching episodes for ${selectedPodcast.name} from: ${selectedPodcast.rssUrl}`);
     
@@ -1575,22 +1592,45 @@ app.post('/webhook/select-channel', async (req, res) => {
     
     // Handle weather service
     if (selectedPodcast.rssUrl === 'WEATHER_SERVICE') {
-      twiml.say(VOICE_CONFIG, getPrompt('weather', 'introduction'));
+      const callerId = req.body.From || req.body.Caller;
       
-      const gather = twiml.gather({
-        numDigits: 5,
-        timeout: 10,
-        finishOnKey: '#',
-        action: '/webhook/weather-zipcode',
-        method: 'POST'
-      });
-      
-      gather.say(VOICE_CONFIG, getPrompt('weather', 'enterZipcode'));
-      
-      twiml.say(VOICE_CONFIG, getPrompt('weather', 'noZipcodeReceived'));
-      twiml.redirect('/webhook/ivr-main');
-      res.type('text/xml');
-      return res.send(twiml.toString());
+      // Check if caller has a saved zipcode
+      if (callerSessions.hasSavedZipcode(callerId)) {
+        const zipcodePrompt = callerSessions.generateZipcodePrompt(callerId);
+        console.log(`🌤️ Returning weather caller with saved zipcode: ${zipcodePrompt.zipcode}`);
+        
+        twiml.say(VOICE_CONFIG, zipcodePrompt.prompt);
+        
+        const gather = twiml.gather({
+          numDigits: 1,
+          timeout: 10,
+          action: `/webhook/weather-zipcode-choice?savedZipcode=${zipcodePrompt.zipcode}`,
+          method: 'POST'
+        });
+        
+        twiml.say(VOICE_CONFIG, getPrompt('weather', 'noZipcodeReceived'));
+        twiml.redirect('/webhook/ivr-main');
+        res.type('text/xml');
+        return res.send(twiml.toString());
+      } else {
+        // First time weather user
+        twiml.say(VOICE_CONFIG, getPrompt('weather', 'introduction'));
+        
+        const gather = twiml.gather({
+          numDigits: 5,
+          timeout: 10,
+          finishOnKey: '#',
+          action: '/webhook/weather-zipcode',
+          method: 'POST'
+        });
+        
+        gather.say(VOICE_CONFIG, getPrompt('weather', 'enterZipcode'));
+        
+        twiml.say(VOICE_CONFIG, getPrompt('weather', 'noZipcodeReceived'));
+        twiml.redirect('/webhook/ivr-main');
+        res.type('text/xml');
+        return res.send(twiml.toString());
+      }
     }
     
     // Handle YouTube debates - now fetches MP3s from shared folder
@@ -1680,20 +1720,20 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         console.log(`🎵 Auto-playing first file: ${firstFile}`);
         
-        twiml.say(VOICE_CONFIG, `Welcome to Debates. Playing: ${filename}. Use star-1 for next, star-2 for previous, or star-star to return to main menu.`);
+        twiml.say(VOICE_CONFIG, `Welcome to Debates. Playing: ${filename}. Use 1 and 3 for episode navigation, 4 and 6 for seek, 2 and 5 for speed, or star to resume.`);
         
         // Play the first MP3 file
         twiml.play(firstFileUrl);
         
         // Add podcast-style navigation controls
         const gather = twiml.gather({
-          numDigits: 2,
+          numDigits: 1,
           timeout: 30,
-          action: `/webhook/debate-controls?currentIndex=0&totalFiles=${fileList.length}`,
+          action: `/webhook/debate-controls?currentIndex=0&totalFiles=${fileList.length}&position=0&startTime=${Date.now()}`,
           method: 'POST'
         });
         
-        gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
+        gather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
         
         twiml.say(VOICE_CONFIG, 'Returning to main menu.');
         twiml.redirect('/webhook/ivr-main');
@@ -2366,10 +2406,110 @@ app.get('/debug-proxy/:encodedUrl/:type?/:startTime?', async (req, res) => {
   }
 });
 
+// Handle weather zipcode choice (use saved vs new)
+app.post('/webhook/weather-zipcode-choice', async (req, res) => {
+  const digits = req.body.Digits;
+  const savedZipcode = req.query.savedZipcode;
+  const caller = req.body.From || req.body.Caller;
+  const callSid = req.body.CallSid;
+  
+  console.log(`🌤️ Weather zipcode choice: ${digits} from ${caller}, saved: ${savedZipcode}`);
+  
+  const twiml = new VoiceResponse();
+  
+  if (digits === '1') {
+    // Use saved zipcode
+    console.log(`🌤️ Using saved zipcode: ${savedZipcode}`);
+    
+    // Check for weather ad before showing forecast
+    let weatherAd = null;
+    if (callSid) {
+      weatherAd = await adSystem.getPrerollAd(callSid, 'weather', 'Weather Service');
+      console.log(`📺 Weather ad result: ${weatherAd ? weatherAd.name : 'none'}`);
+    }
+    
+    // Play ad if available
+    if (weatherAd) {
+      console.log(`📺 Playing weather ad: ${weatherAd.name}`);
+      twiml.say(VOICE_CONFIG, getPrompt('weather', 'adMessage'));
+      
+      // Handle different ad URL formats
+      if (weatherAd.audioUrl.startsWith('/api/test-ad/')) {
+        // Internal TTS ad - get the message and say it directly
+        const adId = weatherAd.audioUrl.split('/').pop();
+        const adMessages = {
+          'preroll1': 'This weather report is brought to you by Local Business. Your neighborhood partner for quality service and friendly support. Visit us today.',
+          'preroll2': 'Tech Company presents this weather forecast. Innovation that works for you. Technology made simple.',
+          'midroll1': 'Stay informed with Restaurant Chain weather updates. Fresh ingredients, great taste, and reliable forecasts.',
+          'midroll2': 'Protect what matters most with Insurance Company weather alerts. Reliable coverage, competitive rates, local agents.'
+        };
+        const adMessage = adMessages[adId] || 'Thank you for listening to our sponsors.';
+        twiml.say(VOICE_CONFIG, adMessage);
+      } else {
+        // External audio URL - play directly
+        twiml.play(weatherAd.audioUrl);
+      }
+      
+      // Track ad in analytics
+      if (callSid) {
+        analytics.trackAdPlayed(callSid, weatherAd);
+      }
+    }
+    
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'usingSavedZipcode', {zipcode: savedZipcode.split('').join(' ')}));
+    
+    try {
+      const weatherReport = await getWeatherForecast(savedZipcode);
+      twiml.say(VOICE_CONFIG, weatherReport);
+      
+      // Offer to repeat or return to menu
+      const gather = twiml.gather({
+        numDigits: 1,
+        timeout: 5,
+        action: '/webhook/weather-options',
+        method: 'POST'
+      });
+      gather.say(VOICE_CONFIG, getPrompt('weather', 'options'));
+      
+      twiml.redirect('/webhook/ivr-main');
+      
+    } catch (error) {
+      console.error(`❌ Weather error for saved zipcode ${savedZipcode}:`, error.message);
+      twiml.say(VOICE_CONFIG, getPrompt('weather', 'unavailable'));
+      twiml.redirect('/webhook/ivr-main');
+    }
+    
+  } else if (digits === '2') {
+    // Enter new zipcode
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'differentZipcode'));
+    
+    const gather = twiml.gather({
+      numDigits: 5,
+      timeout: 10,
+      finishOnKey: '#',
+      action: '/webhook/weather-zipcode',
+      method: 'POST'
+    });
+    
+    gather.say(VOICE_CONFIG, getPrompt('weather', 'enterZipcode'));
+    
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'noZipcodeReceived'));
+    twiml.redirect('/webhook/ivr-main');
+    
+  } else {
+    // Invalid choice, return to main menu
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
 // Handle weather zipcode input
 app.post('/webhook/weather-zipcode', async (req, res) => {
   const zipcode = req.body.Digits;
   const caller = req.body.From || req.body.Caller;
+  const callSid = req.body.CallSid;
   
   console.log(`🌤️ Weather request: ${zipcode} from ${caller}`);
   
@@ -2382,7 +2522,47 @@ app.post('/webhook/weather-zipcode', async (req, res) => {
   }
   
   try {
+    // Save zipcode for future use
+    callerSessions.updateZipcode(caller, zipcode);
+    console.log(`📍 Saved zipcode ${zipcode} for caller ${caller}`);
+    
+    // Check for weather ad before showing forecast
+    let weatherAd = null;
+    if (callSid) {
+      weatherAd = await adSystem.getPrerollAd(callSid, 'weather', 'Weather Service');
+      console.log(`📺 Weather ad result: ${weatherAd ? weatherAd.name : 'none'}`);
+    }
+    
+    // Play ad if available
+    if (weatherAd) {
+      console.log(`📺 Playing weather ad: ${weatherAd.name}`);
+      twiml.say(VOICE_CONFIG, getPrompt('weather', 'adMessage'));
+      
+      // Handle different ad URL formats
+      if (weatherAd.audioUrl.startsWith('/api/test-ad/')) {
+        // Internal TTS ad - get the message and say it directly
+        const adId = weatherAd.audioUrl.split('/').pop();
+        const adMessages = {
+          'preroll1': 'This weather report is brought to you by Local Business. Your neighborhood partner for quality service and friendly support. Visit us today.',
+          'preroll2': 'Tech Company presents this weather forecast. Innovation that works for you. Technology made simple.',
+          'midroll1': 'Stay informed with Restaurant Chain weather updates. Fresh ingredients, great taste, and reliable forecasts.',
+          'midroll2': 'Protect what matters most with Insurance Company weather alerts. Reliable coverage, competitive rates, local agents.'
+        };
+        const adMessage = adMessages[adId] || 'Thank you for listening to our sponsors.';
+        twiml.say(VOICE_CONFIG, adMessage);
+      } else {
+        // External audio URL - play directly
+        twiml.play(weatherAd.audioUrl);
+      }
+      
+      // Track ad in analytics
+      if (callSid) {
+        analytics.trackAdPlayed(callSid, weatherAd);
+      }
+    }
+    
     twiml.say(VOICE_CONFIG, getPrompt('weather', 'gettingForecast', {zipcode: zipcode.split('').join(' ')}));
+    twiml.say(VOICE_CONFIG, getPrompt('weather', 'zipcodeUpdated', {zipcode: zipcode.split('').join(' ')}));
     
     const weatherReport = await getWeatherForecast(zipcode);
     twiml.say(VOICE_CONFIG, weatherReport);
@@ -2635,20 +2815,8 @@ app.all('/webhook/play-episode', async (req, res) => {
       `https://${req.get('host')}/cached_episodes/${path.basename(episode.cachedPath)}` : 
       finalAudioUrl;
     
-    // Check if caller has a resumable session  
+    // Get caller info for session tracking
     const callerId = req.body.From || req.body.Caller;
-    const resumePrompt = callerSessions.generateResumePrompt(callerId);
-    
-    if (resumePrompt && resumePrompt.session.episodeUrl === episode.audioUrl) {
-      // Offer to resume from last position
-      twiml.say(VOICE_CONFIG, resumePrompt.prompt);
-      const resumeGather = twiml.gather({
-        numDigits: 1,
-        timeout: 10,
-        action: `/webhook/resume-choice?channel=${channel}&episodeIndex=${episodeIndex}&resumePosition=${resumePrompt.session.positionSeconds}`
-      });
-      return res.type('text/xml').send(twiml.toString());
-    }
     
     // Get caller's preferred playback speed
     const playbackSpeed = callerSessions.getPlaybackSpeed(callerId);
@@ -2659,7 +2827,7 @@ app.all('/webhook/play-episode', async (req, res) => {
     
     // Set up enhanced playback controls with position tracking and ad breaks
     const gather = twiml.gather({
-      numDigits: 2, // Allow *1, *2, etc.
+      numDigits: 1, // Single digit controls (1,3,4,6,2,5,*,0)
       action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=0`,
       method: 'POST',
       timeout: 30
@@ -2680,8 +2848,8 @@ app.all('/webhook/play-episode', async (req, res) => {
     const playOptions = playbackSpeed !== 1 ? { loop: 1, rate: playbackSpeed } : { loop: 1 };
     gather.play(playOptions, playbackUrl);
     
-    // Enhanced controls prompt
-    gather.say(VOICE_CONFIG, 'Press star 1 to skip forward 30 seconds, star 2 to skip back 30 seconds, star 3 for next episode, star 4 for previous episode, star 0 for main menu, or stay on the line to continue listening.');
+    // Standardized controls prompt
+    gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to rewind 30 seconds, 6 to fast forward 30 seconds, 2 to slow down, 5 to speed up, star to resume your last episode, or stay on the line to continue listening.');
     
     // Continue with ad break tracking
     twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=0&startTime=${Date.now()}`);
@@ -2709,7 +2877,30 @@ app.all('/webhook/play-episode', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Resume choice handler
+// Extension-level resume choice handler
+app.post('/webhook/extension-resume-choice', (req, res) => {
+  const twiml = new twilio.twiml.VoiceResponse();
+  const channel = req.query.channel;
+  const resumePosition = parseInt(req.query.resumePosition);
+  const choice = req.body.Digits;
+  const callerId = req.body.From || req.body.Caller;
+  
+  if (choice === '1') {
+    // Resume from last position
+    console.log(`🔄 Resuming extension ${channel} for ${callerId} at ${resumePosition} seconds`);
+    twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=0&position=${resumePosition}`);
+  } else {
+    // Start fresh and clear session
+    console.log(`🆕 Starting fresh in extension ${channel} for ${callerId}`);
+    callerSessions.clearSession(callerId);
+    twiml.redirect(`/webhook/select-channel?Digits=${channel}`);
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Episode-level resume choice handler (kept for backward compatibility)
 app.post('/webhook/resume-choice', (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
   const channel = req.query.channel;
@@ -2884,84 +3075,87 @@ app.post('/webhook/playback-control', async (req, res) => {
   }
   
   switch(digits) {
-    case '*1': // Skip forward 30 seconds
-      try {
-        const forwardPosition = actualPosition + 30;
-        console.log(`⏩ Skip forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
-        twiml.say(VOICE_CONFIG, 'Skipping forward 30 seconds.');
-        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
-      } catch (error) {
-        console.error(`❌ Skip forward error:`, error.message);
-        twiml.say(VOICE_CONFIG, 'Skip forward failed. Continuing current playback.');
-        twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
-      }
-      break;
-      
-    case '*2': // Skip back 30 seconds  
-      try {
-        const backPosition = Math.max(0, actualPosition - 30);
-        console.log(`⏪ Skip back 30s: ${actualPosition}s -> ${backPosition}s`);
-        twiml.say(VOICE_CONFIG, 'Skipping back 30 seconds.');
-        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
-      } catch (error) {
-        console.error(`❌ Skip back error:`, error.message);
-        twiml.say(VOICE_CONFIG, 'Skip back failed. Continuing current playback.');
-        twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
-      }
-      break;
-      
-    case '*3': // Next episode
-      twiml.say(VOICE_CONFIG, 'Going to next episode.');
-      twiml.redirect(`/webhook/episode-finished?channel=${channel}&episodeIndex=${episodeIndex}`);
-      break;
-      
-    case '*4': // Previous episode
+    case '1': // Previous episode
       const prevEpisode = Math.max(0, episodeIndex - 1);
       twiml.say(VOICE_CONFIG, 'Going to previous episode.');
       twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${prevEpisode}`);
       break;
       
-    case '*0': // Main menu
-      twiml.say(VOICE_CONFIG, 'Returning to main menu.');
-      twiml.redirect('/webhook/ivr-main');
-      break;
-      
-    // Legacy controls for backwards compatibility
-    case '1': // Previous episode (legacy)
-      const prevEpisodeLegacy = Math.max(0, episodeIndex - 1);
-      twiml.say(VOICE_CONFIG, 'Going to previous episode.');
-      twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${prevEpisodeLegacy}`);
-      break;
-      
-    case '3': // Next episode (legacy)
+    case '3': // Next episode
       twiml.say(VOICE_CONFIG, 'Going to next episode.');
       twiml.redirect(`/webhook/episode-finished?channel=${channel}&episodeIndex=${episodeIndex}`);
       break;
       
-    case '4': // Skip back 2 minutes (legacy)
+    case '4': // Rewind 30 seconds
       try {
-        const backPosition = Math.max(0, actualPosition - SKIP_DURATION);
-        const backMins = Math.floor(backPosition / 60);
-        console.log(`⏪ Skip back: ${actualPosition}s -> ${backPosition}s (${backMins}m)`);
-        twiml.say(VOICE_CONFIG, `Skipping back to ${backMins} minutes.`);
+        const backPosition = Math.max(0, actualPosition - 30);
+        console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
+        twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
         twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
       } catch (error) {
-        console.error(`❌ Skip back error:`, error.message);
-        twiml.say(VOICE_CONFIG, 'Skip back failed. Continuing current playback.');
+        console.error(`❌ Rewind error:`, error.message);
+        twiml.say(VOICE_CONFIG, 'Rewind failed. Continuing current playback.');
         twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
       }
       break;
       
-    case '6': // Skip forward 2 minutes (legacy)
+    case '6': // Fast forward 30 seconds
       try {
-        const forwardPosition = actualPosition + SKIP_DURATION;
-        const forwardMins = Math.floor(forwardPosition / 60);
-        console.log(`⏩ Skip forward: ${actualPosition}s -> ${forwardPosition}s (${forwardMins}m)`);
-        twiml.say(VOICE_CONFIG, `Skipping forward to ${forwardMins} minutes.`);
+        const forwardPosition = actualPosition + 30;
+        console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
+        twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
         twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
       } catch (error) {
-        console.error(`❌ Skip forward error:`, error.message);
-        twiml.say(VOICE_CONFIG, 'Skip forward failed. Continuing current playback.');
+        console.error(`❌ Fast forward error:`, error.message);
+        twiml.say(VOICE_CONFIG, 'Fast forward failed. Continuing current playback.');
+        twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
+      }
+      break;
+      
+    case '2': // Decrease playback speed
+      try {
+        const currentSpeed = callerSessions.getPlaybackSpeed(callerId);
+        const newSpeed = Math.max(0.5, currentSpeed - 0.25); // Min 0.5x speed
+        callerSessions.updatePlaybackSpeed(callerId, newSpeed);
+        console.log(`🐌 Speed decreased: ${currentSpeed}x -> ${newSpeed}x`);
+        twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSpeed} times normal.`);
+        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}`);
+      } catch (error) {
+        console.error(`❌ Speed decrease error:`, error.message);
+        twiml.say(VOICE_CONFIG, 'Speed change failed. Continuing current playback.');
+        twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
+      }
+      break;
+      
+    case '5': // Increase playback speed
+      try {
+        const currentSpeed = callerSessions.getPlaybackSpeed(callerId);
+        const newSpeed = Math.min(2.0, currentSpeed + 0.25); // Max 2x speed
+        callerSessions.updatePlaybackSpeed(callerId, newSpeed);
+        console.log(`🏃 Speed increased: ${currentSpeed}x -> ${newSpeed}x`);
+        twiml.say(VOICE_CONFIG, `Playback speed increased to ${newSpeed} times normal.`);
+        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}`);
+      } catch (error) {
+        console.error(`❌ Speed increase error:`, error.message);
+        twiml.say(VOICE_CONFIG, 'Speed change failed. Continuing current playback.');
+        twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
+      }
+      break;
+      
+    case '*': // Resume previous episode
+      try {
+        const lastSession = callerSessions.getLastPosition(callerId);
+        if (lastSession && lastSession.channelId !== channel) {
+          console.log(`🔄 Resuming previous episode: Channel ${lastSession.channelId}`);
+          twiml.say(VOICE_CONFIG, `Resuming your previous episode in channel ${lastSession.channelId}.`);
+          twiml.redirect(`/webhook/play-episode-at-position?channel=${lastSession.channelId}&episodeIndex=0&position=${lastSession.positionSeconds}`);
+        } else {
+          twiml.say(VOICE_CONFIG, 'No previous episode to resume.');
+          twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
+        }
+      } catch (error) {
+        console.error(`❌ Resume error:`, error.message);
+        twiml.say(VOICE_CONFIG, 'Resume failed. Continuing current playback.');
         twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
       }
       break;
@@ -3615,11 +3809,14 @@ app.all('/webhook/play-debate', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Handle debate playback controls - file navigation
+// Handle debate playback controls - standardized controls for Extension 50
 app.all('/webhook/debate-controls', async (req, res) => {
   const digits = req.body.Digits;
   const currentIndex = parseInt(req.query.currentIndex || '0');
   const totalFiles = parseInt(req.query.totalFiles || '3');
+  const currentPosition = parseInt(req.query.position || '0');
+  const startTime = parseInt(req.query.startTime) || Date.now();
+  const callerId = req.body.From || req.body.Caller;
   const twiml = new VoiceResponse();
   
   console.log(`🎵 Debate controls: ${digits}, currentIndex: ${currentIndex}, totalFiles: ${totalFiles}`);
@@ -3650,70 +3847,189 @@ app.all('/webhook/debate-controls', async (req, res) => {
       fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
     }
   
-    if (digits === '*1') {
-      // Next file
-      const nextIndex = (currentIndex + 1) % fileList.length;
-      const nextFile = fileList[nextIndex];
-      const nextFileUrl = `${railwayBaseUrl}${nextFile}`;
-      const filename = nextFile.replace('.mp3', '').replace(/[-_]/g, ' ');
-      
-      console.log(`⏭️ Playing next file: ${nextFile} (index ${nextIndex})`);
-      
-      twiml.say(VOICE_CONFIG, `Playing: ${filename}`);
-      twiml.play(nextFileUrl);
-      
-      const gather = twiml.gather({
-        numDigits: 2,
-        timeout: 30,
-        action: `/webhook/debate-controls?currentIndex=${nextIndex}&totalFiles=${fileList.length}`,
-        method: 'POST'
-      });
-      
-      gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
-      twiml.redirect('/webhook/ivr-main');
-      
-    } else if (digits === '*2') {
-      // Previous file
-      const prevIndex = currentIndex > 0 ? currentIndex - 1 : fileList.length - 1;
-      const prevFile = fileList[prevIndex];
-      const prevFileUrl = `${railwayBaseUrl}${prevFile}`;
-      const filename = prevFile.replace('.mp3', '').replace(/[-_]/g, ' ');
-      
-      console.log(`⏮️ Playing previous file: ${prevFile} (index ${prevIndex})`);
-      
-      twiml.say(VOICE_CONFIG, `Playing: ${filename}`);
-      twiml.play(prevFileUrl);
-      
-      const gather = twiml.gather({
-        numDigits: 2,
-        timeout: 30,
-        action: `/webhook/debate-controls?currentIndex=${prevIndex}&totalFiles=${fileList.length}`,
-        method: 'POST'
-      });
-      
-      gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
-      twiml.redirect('/webhook/ivr-main');
-      
-    } else if (digits === '**') {
-      // Return to main menu
-      twiml.redirect('/webhook/ivr-main');
-    } else {
-      // Invalid input - replay current file
-      const currentFile = fileList[currentIndex];
-      const currentFileUrl = `${railwayBaseUrl}${currentFile}`;
-      
-      twiml.say(VOICE_CONFIG, 'Invalid option. Replaying current file.');
-      twiml.play(currentFileUrl);
-      
-      const gather = twiml.gather({
-        numDigits: 2,
-        timeout: 30,
-        action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}`,
-        method: 'POST'
-      });
-      
-      gather.say(VOICE_CONFIG, 'Press star-1 for next file, star-2 for previous, or star-star for main menu.');
-      twiml.redirect('/webhook/ivr-main');
+    // Calculate actual position based on playback time
+    const playbackDuration = Math.floor((Date.now() - startTime) / 1000);
+    const playbackSpeed = callerSessions.getPlaybackSpeed(callerId) || 1.0;
+    const actualPosition = currentPosition + Math.floor(playbackDuration * playbackSpeed);
+  
+    switch(digits) {
+      case '1': // Previous episode/file
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : fileList.length - 1;
+        const prevFile = fileList[prevIndex];
+        const prevFileUrl = `${railwayBaseUrl}${prevFile}`;
+        const prevFilename = prevFile.replace('.mp3', '').replace(/[-_]/g, ' ');
+        
+        console.log(`⏮️ Playing previous file: ${prevFile} (index ${prevIndex})`);
+        
+        twiml.say(VOICE_CONFIG, `Previous episode: ${prevFilename}`);
+        twiml.play(prevFileUrl);
+        
+        const prevGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=${prevIndex}&totalFiles=${fileList.length}&position=0&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        prevGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '3': // Next episode/file
+        const nextIndex = (currentIndex + 1) % fileList.length;
+        const nextFile = fileList[nextIndex];
+        const nextFileUrl = `${railwayBaseUrl}${nextFile}`;
+        const nextFilename = nextFile.replace('.mp3', '').replace(/[-_]/g, ' ');
+        
+        console.log(`⏭️ Playing next file: ${nextFile} (index ${nextIndex})`);
+        
+        twiml.say(VOICE_CONFIG, `Next episode: ${nextFilename}`);
+        twiml.play(nextFileUrl);
+        
+        const nextGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=${nextIndex}&totalFiles=${fileList.length}&position=0&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        nextGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '4': // Rewind 30 seconds (seek backward)
+        const backPosition = Math.max(0, actualPosition - 30);
+        console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
+        
+        twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
+        // For debates, we'll restart the current file since seeking isn't easily supported
+        const currentFile = fileList[currentIndex];
+        const currentFileUrl = `${railwayBaseUrl}${currentFile}`;
+        twiml.play(currentFileUrl);
+        
+        const rewindGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}&position=${backPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        rewindGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '6': // Fast forward 30 seconds (seek forward)
+        const forwardPosition = actualPosition + 30;
+        console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
+        
+        twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
+        // For debates, we'll continue with current file
+        const currentFileForward = fileList[currentIndex];
+        const currentFileUrlForward = `${railwayBaseUrl}${currentFileForward}`;
+        twiml.play(currentFileUrlForward);
+        
+        const ffGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}&position=${forwardPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        ffGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '2': // Decrease playback speed
+        const currentSpeed = callerSessions.getPlaybackSpeed(callerId) || 1.0;
+        const newSlowSpeed = Math.max(0.5, currentSpeed - 0.25);
+        callerSessions.updatePlaybackSpeed(callerId, newSlowSpeed);
+        console.log(`🐌 Speed decreased: ${currentSpeed}x -> ${newSlowSpeed}x`);
+        
+        twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSlowSpeed} times normal.`);
+        const currentFileSpeed = fileList[currentIndex];
+        const currentFileUrlSpeed = `${railwayBaseUrl}${currentFileSpeed}`;
+        twiml.play({ rate: newSlowSpeed }, currentFileUrlSpeed);
+        
+        const speedGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}&position=${actualPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        speedGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '5': // Increase playback speed
+        const currentFastSpeed = callerSessions.getPlaybackSpeed(callerId) || 1.0;
+        const newFastSpeed = Math.min(2.0, currentFastSpeed + 0.25);
+        callerSessions.updatePlaybackSpeed(callerId, newFastSpeed);
+        console.log(`🏃 Speed increased: ${currentFastSpeed}x -> ${newFastSpeed}x`);
+        
+        twiml.say(VOICE_CONFIG, `Playback speed increased to ${newFastSpeed} times normal.`);
+        const currentFileFast = fileList[currentIndex];
+        const currentFileUrlFast = `${railwayBaseUrl}${currentFileFast}`;
+        twiml.play({ rate: newFastSpeed }, currentFileUrlFast);
+        
+        const fastGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}&position=${actualPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        fastGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '*': // Resume last episode from another channel
+        const lastSession = callerSessions.getLastPosition(callerId);
+        if (lastSession && lastSession.channelId !== '50') {
+          console.log(`🔄 Resuming previous episode: Channel ${lastSession.channelId}`);
+          twiml.say(VOICE_CONFIG, `Resuming your previous episode in channel ${lastSession.channelId}.`);
+          twiml.redirect(`/webhook/play-episode-at-position?channel=${lastSession.channelId}&episodeIndex=0&position=${lastSession.positionSeconds}`);
+        } else {
+          twiml.say(VOICE_CONFIG, 'No previous episode to resume.');
+          // Continue current file
+          const currentFileResume = fileList[currentIndex];
+          const currentFileUrlResume = `${railwayBaseUrl}${currentFileResume}`;
+          twiml.play(currentFileUrlResume);
+          
+          const resumeGather = twiml.gather({
+            numDigits: 1,
+            timeout: 30,
+            action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}&position=${actualPosition}&startTime=${Date.now()}`,
+            method: 'POST'
+          });
+          
+          resumeGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+          twiml.redirect('/webhook/ivr-main');
+        }
+        break;
+        
+      case '0': // Main menu
+        twiml.say(VOICE_CONFIG, 'Returning to main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      default:
+        // Invalid input or timeout - continue current file
+        const currentFileDefault = fileList[currentIndex];
+        const currentFileUrlDefault = `${railwayBaseUrl}${currentFileDefault}`;
+        
+        twiml.say(VOICE_CONFIG, 'Continuing current episode.');
+        twiml.play(currentFileUrlDefault);
+        
+        const defaultGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-controls?currentIndex=${currentIndex}&totalFiles=${fileList.length}&position=${actualPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        defaultGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        twiml.redirect('/webhook/ivr-main');
     }
   } catch (error) {
     console.error('❌ Error in debate controls:', error);
