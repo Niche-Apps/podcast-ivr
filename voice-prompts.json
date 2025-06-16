@@ -10,19 +10,19 @@
   },
   
   "weather": {
-    "introduction": "Weather forecast service. Please enter your 5-digit zipcode followed by the pound key.",
+    "introduction": "Enter your 5-digit zipcode followed by pound.",
     "enterZipcode": "Enter your zipcode now.",
     "noZipcodeReceived": "I did not receive your zipcode. Returning to main menu.",
     "invalidZipcode": "Sorry, that does not appear to be a valid 5-digit zipcode. Please try again.",
-    "gettingForecast": "Getting weather forecast for zipcode {zipcode}.",
+    "gettingForecast": "Getting forecast.",
     "unavailable": "Sorry, I was unable to get weather information at this time. Please try again later.",
     "zipcodeNotFound": "Sorry, I couldn't find weather information for zipcode {zipcode}. Please make sure you entered a valid US zipcode.",
     "options": "Press 1 to hear the forecast again, 2 for a different zipcode, or any other key to return to the main menu.",
     "repeatPrompt": "Please enter your zipcode again to hear the forecast.",
     "differentZipcode": "Please enter a different zipcode.",
-    "welcomeBack": "Welcome back! I remember your zipcode is {zipcode}. Press 1 to use this zipcode, or 2 to enter a different one.",
-    "usingSavedZipcode": "Using your saved zipcode {zipcode}.",
-    "zipcodeUpdated": "I'll remember zipcode {zipcode} for next time.",
+    "welcomeBack": "Your zipcode is {zipcode}. Press 1 to continue, or 2 for different zipcode.",
+    "usingSavedZipcode": "Using {zipcode}.",
+    "zipcodeUpdated": "Zipcode {zipcode} saved.",
     "adMessage": "This weather report is brought to you by our sponsor."
   },
   

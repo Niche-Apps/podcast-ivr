@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const axios = require('axios');
+const path = require('path');
 
 // Voice configuration  
 const VOICE_CONFIG = {
@@ -2060,25 +2061,34 @@ app.post('/webhook/select-channel', async (req, res) => {
     const episode = episodes[0];
     console.log(`📻 Episode found: "${episode.title}"`);
     
-    // Clean the URL with error handling
-    let finalAudioUrl;
-    try {
-      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-      if (!cleanedUrl || !cleanedUrl.startsWith('http')) {
-        throw new Error('Invalid cleaned URL');
+    // Determine audio source: use cached file if available, otherwise remote URL
+    let finalAudioUrl, playUrl;
+    
+    if (episode.isCached && episode.cachedPath) {
+      // Use cached file through proxy for speed/seek support
+      console.log(`💾 Using cached episode: ${episode.cachedPath}`);
+      const cachedIdentifier = `cached://${path.basename(episode.cachedPath)}`;
+      const encodedUrl = Buffer.from(cachedIdentifier).toString('base64');
+      playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+      console.log(`🚀 Using cached proxy for playback: ${playUrl.substring(0, 80)}...`);
+    } else {
+      // Use remote URL through proxy
+      try {
+        const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+        if (!cleanedUrl || !cleanedUrl.startsWith('http')) {
+          throw new Error('Invalid cleaned URL');
+        }
+        finalAudioUrl = cleanedUrl;
+      } catch (urlError) {
+        console.error(`⚠️ URL cleaning failed: ${urlError.message}, using original URL`);
+        finalAudioUrl = episode.audioUrl;
       }
-      finalAudioUrl = cleanedUrl;
-    } catch (urlError) {
-      console.error(`⚠️ URL cleaning failed: ${urlError.message}, using original URL`);
-      finalAudioUrl = episode.audioUrl;
+      
+      console.log(`✅ Using remote audio URL: ${finalAudioUrl.substring(0, 100)}...`);
+      const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
+      playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+      console.log(`🚀 Using remote proxy for playback: ${playUrl.substring(0, 80)}...`);
     }
-    
-    console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
-    
-    // Start pre-loading the audio while announcing the title for faster playback
-    const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
-    const playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
-    console.log(`🚀 Using direct proxy for playback: ${playUrl.substring(0, 80)}...`);
     
     // Parallel loading: Start warming up the audio stream while title is being read
     // This reduces perceived latency by ~2-3 seconds
@@ -2209,6 +2219,77 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
+// Handle cached file streaming with speed and seeking support
+function handleCachedFileStreaming(cachedFilePath, seekTime, playbackSpeed, res) {
+  const fs = require('fs');
+  
+  try {
+    console.log(`📁 Streaming cached file: ${path.basename(cachedFilePath)} (seek: ${seekTime}s, speed: ${playbackSpeed}x)`);
+    
+    const stat = fs.statSync(cachedFilePath);
+    const fileSize = stat.size;
+    
+    // Calculate byte offset for seeking (rough estimation)
+    let startByte = 0;
+    if (seekTime > 0) {
+      // Estimate bytes per second (128kbps = 16KB/s is common for podcasts)
+      const estimatedBytesPerSecond = 16000; // Rough estimate
+      startByte = Math.min(seekTime * estimatedBytesPerSecond, fileSize - 1);
+      console.log(`⏩ Seeking to byte ${startByte} (estimated from ${seekTime}s)`);
+    }
+    
+    // Set response headers for audio streaming
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('X-Playback-Speed', playbackSpeed);
+    res.setHeader('X-Seek-Time', seekTime);
+    res.setHeader('X-Proxy-Source', 'cached-file');
+    
+    // Handle byte range requests for seeking
+    if (startByte > 0) {
+      const endByte = fileSize - 1;
+      const contentLength = endByte - startByte + 1;
+      
+      res.setHeader('Content-Range', `bytes ${startByte}-${endByte}/${fileSize}`);
+      res.setHeader('Content-Length', contentLength);
+      res.status(206); // Partial content
+      
+      console.log(`📊 Serving partial content: bytes ${startByte}-${endByte}/${fileSize}`);
+    } else {
+      res.setHeader('Content-Length', fileSize);
+      console.log(`📊 Serving full cached file: ${Math.round(fileSize/1024/1024)}MB`);
+    }
+    
+    // Create readable stream from the cached file
+    const stream = fs.createReadStream(cachedFilePath, { 
+      start: startByte, 
+      end: fileSize - 1 
+    });
+    
+    // Handle streaming errors
+    stream.on('error', (streamError) => {
+      console.error(`❌ Cached file stream error:`, streamError.message);
+      if (!res.headersSent) {
+        res.status(500).send('Cached file stream error');
+      }
+    });
+    
+    // Track when streaming completes
+    stream.on('end', () => {
+      console.log(`✅ Cached file streaming completed: ${path.basename(cachedFilePath)}`);
+    });
+    
+    // Pipe the file stream to the response
+    stream.pipe(res);
+    
+  } catch (error) {
+    console.error(`❌ Cached file streaming error:`, error.message);
+    res.status(500).json({ error: 'Failed to stream cached file' });
+  }
+}
+
 // Audio proxy endpoint with byte-range support for seeking
 app.get('/proxy-audio/:encodedUrl/:type?/:startTime?/:speedType?/:speed?', async (req, res) => {
   try {
@@ -2221,18 +2302,38 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?/:speedType?/:speed?', async
     // Remove any query parameters from the encoded URL path
     encodedUrl = encodedUrl.split('?')[0];
     
-    let originalUrl;
+    let originalUrl, isCachedFile = false, cachedFilePath;
     try {
       originalUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
       console.log(`🔗 Decoded URL: ${originalUrl.substring(0, 100)}...`);
+      
+      // Check if this is a cached file identifier
+      if (originalUrl.startsWith('cached://')) {
+        isCachedFile = true;
+        const filename = originalUrl.replace('cached://', '');
+        cachedFilePath = path.join(__dirname, 'cached_episodes', filename);
+        console.log(`💾 Cached file request: ${cachedFilePath}`);
+        
+        // Verify cached file exists
+        const fs = require('fs');
+        if (!fs.existsSync(cachedFilePath)) {
+          console.error(`❌ Cached file not found: ${cachedFilePath}`);
+          return res.status(404).json({ error: 'Cached file not found' });
+        }
+      }
     } catch (decodeError) {
       console.error(`❌ Base64 decode error:`, decodeError.message);
       return res.status(400).send('Invalid encoded URL');
     }
     
-    console.log(`🎵 Streaming: ${originalUrl.substring(0, 100)}... ${seekTime > 0 ? `(seeking to ${seekTime}s)` : ''}`);
+    console.log(`🎵 Streaming: ${isCachedFile ? 'cached file' : originalUrl.substring(0, 100)}... ${seekTime > 0 ? `(seeking to ${seekTime}s)` : ''}`);
     
-    // First, get content-length to calculate byte offset
+    // Handle cached file streaming with speed/seek support
+    if (isCachedFile) {
+      return handleCachedFileStreaming(cachedFilePath, seekTime, playbackSpeed, res);
+    }
+    
+    // Handle remote file streaming (original logic)
     let headers = {
       'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
       'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
@@ -3328,44 +3429,61 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
     
-    // Clean the URL and check if seeking is supported
-    const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-    const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+    // Determine audio source: use cached file if available, otherwise remote URL
+    let playUrl, encodedUrl;
     
-    // Test if seeking is supported before constructing seek URL
-    let playUrl;
-    let seekingSupported = false;
-    
-    if (position > 0) {
-      seekingSupported = await testSeekingSupport(cleanedUrl);
+    if (episode.isCached && episode.cachedPath) {
+      // Use cached file - seeking always supported for local files
+      console.log(`💾 Using cached episode for seeking: ${episode.cachedPath}`);
+      const cachedIdentifier = `cached://${path.basename(episode.cachedPath)}`;
+      encodedUrl = Buffer.from(cachedIdentifier).toString('base64');
       
-      if (seekingSupported) {
+      if (position > 0) {
         playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}`;
-        console.log(`✅ Seeking supported, using seek URL: ${position}s`);
+        console.log(`✅ Cached file seeking to: ${position}s`);
       } else {
         playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
-        console.log(`⚠️ Seeking not supported, using full stream URL`);
       }
     } else {
-      // Starting from beginning, no need to test seeking
-      playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+      // Use remote URL and test if seeking is supported
+      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+      encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+      let seekingSupported = false;
+      
+      if (position > 0) {
+        seekingSupported = await testSeekingSupport(cleanedUrl);
+        
+        if (seekingSupported) {
+          playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}`;
+          console.log(`✅ Remote seeking supported, using seek URL: ${position}s`);
+        } else {
+          playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+          console.log(`⚠️ Remote seeking not supported, using full stream URL`);
+        }
+      } else {
+        // Starting from beginning, no need to test seeking
+        playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+      }
     }
     
-    // Pre-load check while announcing position for faster playback
-    const preloadPromise = axios.head(cleanedUrl, {
-      timeout: 2000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
-        'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
-      }
-    }).catch(err => {
-      console.log(`🔄 Preload check: ${err.message || 'completed'}`);
-    });
+    // Pre-load check for remote files only (cached files are always ready)
+    if (!episode.isCached) {
+      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+      const preloadPromise = axios.head(cleanedUrl, {
+        timeout: 2000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; TwilioPodcastBot/2.0)',
+          'Accept': 'audio/mpeg, audio/mp4, audio/*, */*'
+        }
+      }).catch(err => {
+        console.log(`🔄 Remote preload check: ${err.message || 'completed'}`);
+      });
+    }
     
-    // Announce position if not at start (gives time for preloading)
+    // Announce position if not at start
     if (position > 0) {
       const positionMins = Math.floor(position / 60);
-      if (seekingSupported) {
+      if (episode.isCached || seekingSupported) {
         twiml.say(VOICE_CONFIG, `Resuming at ${positionMins} minutes.`);
       } else {
         twiml.say(VOICE_CONFIG, `Seeking not supported for this episode. Playing from the beginning.`);
@@ -3432,14 +3550,27 @@ app.all('/webhook/play-episode-with-speed', async (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
     
-    // Clean the URL and encode it with speed parameter
-    const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-    const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-    const playUrl = position > 0 ? 
-      `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}/speed/${speed}` :
-      `https://${req.get('host')}/proxy-audio/${encodedUrl}/speed/${speed}`;
+    // Determine audio source: use cached file if available, otherwise remote URL
+    let playUrl, encodedUrl;
     
-    console.log(`🎵 Playing with speed ${speed}x: ${episode.title}`);
+    if (episode.isCached && episode.cachedPath) {
+      // Use cached file with speed parameter
+      console.log(`💾 Using cached episode with speed ${speed}x: ${episode.cachedPath}`);
+      const cachedIdentifier = `cached://${path.basename(episode.cachedPath)}`;
+      encodedUrl = Buffer.from(cachedIdentifier).toString('base64');
+      playUrl = position > 0 ? 
+        `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}/speed/${speed}` :
+        `https://${req.get('host')}/proxy-audio/${encodedUrl}/speed/${speed}`;
+    } else {
+      // Use remote URL with speed parameter
+      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+      encodedUrl = Buffer.from(cleanedUrl).toString('base64');
+      playUrl = position > 0 ? 
+        `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}/speed/${speed}` :
+        `https://${req.get('host')}/proxy-audio/${encodedUrl}/speed/${speed}`;
+    }
+    
+    console.log(`🎵 Playing with speed ${speed}x: ${episode.title} (${episode.isCached ? 'cached' : 'remote'})`);
     
     // Set up gather with position tracking and speed-adjusted timing
     const gather = twiml.gather({
