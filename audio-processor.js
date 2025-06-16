@@ -12,6 +12,24 @@ class AudioProcessor {
     // Common speed presets for caching
     this.speedPresets = [0.75, 1.0, 1.25, 1.5, 2.0];
     this.chunkDuration = 30; // 30-second chunks for seeking
+    
+    // Configure FFmpeg paths
+    this.setupFFmpeg();
+  }
+  
+  setupFFmpeg() {
+    try {
+      // Set FFmpeg paths from environment or defaults
+      const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+      const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+      
+      ffmpeg.setFfmpegPath(ffmpegPath);
+      ffmpeg.setFfprobePath(ffprobePath);
+      
+      console.log(`🎵 FFmpeg configured: ${ffmpegPath}`);
+    } catch (error) {
+      console.warn(`⚠️ FFmpeg setup warning:`, error.message);
+    }
   }
 
   ensureDirectories() {
@@ -23,8 +41,24 @@ class AudioProcessor {
     });
   }
 
+  // Check if FFmpeg is available
+  async checkFFmpegAvailable() {
+    return new Promise((resolve) => {
+      const { exec } = require('child_process');
+      exec('ffmpeg -version', (error) => {
+        resolve(!error);
+      });
+    });
+  }
+
   // Generate speed-adjusted version of audio file
   async processAudioSpeed(inputPath, outputPath, speed) {
+    const ffmpegAvailable = await this.checkFFmpegAvailable();
+    if (!ffmpegAvailable) {
+      console.warn(`⚠️ FFmpeg not available - skipping audio processing`);
+      throw new Error('FFmpeg not available');
+    }
+    
     return new Promise((resolve, reject) => {
       console.log(`🎵 Processing audio: ${speed}x speed`);
       
