@@ -2,7 +2,7 @@
 aptPkgs = ["ffmpeg", "sox", "libsox-fmt-all"]
 
 [phases.install]
-cmds = ["npm ci --only=production"]
+cmds = ["npm install --omit=dev"]
 
 [phases.build]
 cmds = ["echo 'Build complete - FFmpeg and audio tools installed'"]
