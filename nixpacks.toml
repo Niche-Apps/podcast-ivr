@@ -1,15 +1,6 @@
 [phases.setup]
 aptPkgs = ["ffmpeg", "sox", "libsox-fmt-all"]
 
-[phases.install]
-cmds = ["npm install --omit=dev"]
-
-[phases.build]
-cmds = ["echo 'Build complete - FFmpeg and audio tools installed'"]
-
-[start]
-cmd = "npm start"
-
 [variables]
 FFMPEG_PATH = "/usr/bin/ffmpeg"
 FFPROBE_PATH = "/usr/bin/ffprobe"

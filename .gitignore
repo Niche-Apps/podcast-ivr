@@ -1,6 +1,7 @@
 node_modules/
 .env
 *.log
+package-lock.json
 
 # Development and debug files
 server-debug.js

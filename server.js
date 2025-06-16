@@ -108,14 +108,25 @@ const analytics = new CallerAnalytics();
 // Initialize Episode Cache, Caller Sessions, and Audio Processor
 const episodeCache = new EpisodeCache();
 const callerSessions = new CallerSessions();
-const audioProcessor = new AudioProcessor();
+
+// Initialize audio processor with error handling
+let audioProcessor = null;
+try {
+  audioProcessor = new AudioProcessor();
+  console.log('🎵 Audio processor initialized successfully');
+} catch (error) {
+  console.warn('⚠️ Audio processor initialization failed:', error.message);
+  console.warn('🎵 Speed and seek controls will use fallback methods');
+}
 
 // Cleanup job - run every hour
 setInterval(() => {
   console.log('🧹 Running scheduled cleanup...');
   episodeCache.cleanupExpiredEpisodes();
   callerSessions.cleanupOldSessions();
-  audioProcessor.cleanup(168); // Clean audio files older than 7 days
+  if (audioProcessor) {
+    audioProcessor.cleanup(168); // Clean audio files older than 7 days
+  }
 }, 60 * 60 * 1000); // 1 hour
 
 // Enhanced RSS fetching function with episode caching
