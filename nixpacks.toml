@@ -4,3 +4,4 @@ aptPkgs = ["ffmpeg", "sox", "libsox-fmt-all"]
 [variables]
 FFMPEG_PATH = "/usr/bin/ffmpeg"
 FFPROBE_PATH = "/usr/bin/ffprobe"
+NPM_CONFIG_CACHE = "/tmp/.npm"
