@@ -4,6 +4,7 @@ const twilio = require('twilio');
 const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Voice configuration  
 const VOICE_CONFIG = {
@@ -21,6 +22,7 @@ const CallerAnalytics = require('./caller-analytics');
 // Import enhanced caching and session management
 const EpisodeCache = require('./episode-cache');
 const CallerSessions = require('./caller-sessions');
+const AudioProcessor = require('./audio-processor');
 
 // Weather API configuration
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY || '3d01c291215870d467a4f3881e114bf6';
@@ -103,15 +105,17 @@ let audioPipeline;
 const adSystem = new AdSystem();
 const analytics = new CallerAnalytics();
 
-// Initialize Episode Cache and Caller Sessions
+// Initialize Episode Cache, Caller Sessions, and Audio Processor
 const episodeCache = new EpisodeCache();
 const callerSessions = new CallerSessions();
+const audioProcessor = new AudioProcessor();
 
 // Cleanup job - run every hour
 setInterval(() => {
   console.log('🧹 Running scheduled cleanup...');
   episodeCache.cleanupExpiredEpisodes();
   callerSessions.cleanupOldSessions();
+  audioProcessor.cleanup(168); // Clean audio files older than 7 days
 }, 60 * 60 * 1000); // 1 hour
 
 // Enhanced RSS fetching function with episode caching
@@ -188,6 +192,21 @@ async function fetchPodcastEpisodes(rssUrl, startIndex = 0, maxCount = 10, chann
                             try {
                                 console.log(`📥 Auto-caching latest episode: "${title}"`);
                                 cachedPath = await episodeCache.ensureLatestEpisode(channelId, audioUrl, title);
+                                
+                                // Trigger audio processing for popular channels (async)
+                                if (cachedPath && ['2', '3', '4', '6', '7', '8', '10', '11', '12'].includes(channelId)) {
+                                    const episodeId = `${channelId}_${crypto.createHash('md5').update(audioUrl).digest('hex')}`;
+                                    console.log(`🎵 Triggering audio processing for popular channel ${channelId}`);
+                                    
+                                    // Process in background (don't await)
+                                    audioProcessor.processEpisodeComplete(cachedPath, episodeId)
+                                        .then(result => {
+                                            console.log(`✅ Audio processing complete for episode ${episodeId}`);
+                                        })
+                                        .catch(error => {
+                                            console.warn(`⚠️ Audio processing failed for ${episodeId}:`, error.message);
+                                        });
+                                }
                             } catch (cacheError) {
                                 console.warn(`⚠️ Failed to cache latest episode: ${cacheError.message}`);
                             }
@@ -2216,73 +2235,140 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
-// Handle cached file streaming with speed and seeking support
+// Handle cached file streaming with advanced audio processing
 function handleCachedFileStreaming(cachedFilePath, seekTime, playbackSpeed, res) {
   
   try {
     console.log(`📁 Streaming cached file: ${path.basename(cachedFilePath)} (seek: ${seekTime}s, speed: ${playbackSpeed}x)`);
     
-    const stat = fs.statSync(cachedFilePath);
-    const fileSize = stat.size;
+    // Extract episode ID from cached file path
+    const filename = path.basename(cachedFilePath, '.mp3');
+    const episodeId = filename.replace(/^.*?_/, ''); // Remove channel prefix
     
-    // Calculate byte offset for seeking (rough estimation)
-    let startByte = 0;
-    if (seekTime > 0) {
-      // Estimate bytes per second (128kbps = 16KB/s is common for podcasts)
-      const estimatedBytesPerSecond = 16000; // Rough estimate
-      startByte = Math.min(seekTime * estimatedBytesPerSecond, fileSize - 1);
-      console.log(`⏩ Seeking to byte ${startByte} (estimated from ${seekTime}s)`);
-    }
+    // Check if we have processed versions available
+    const hasProcessed = audioProcessor.hasProcessedVersions(episodeId);
     
     // Set response headers for audio streaming
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('X-Playback-Speed', playbackSpeed);
     res.setHeader('X-Seek-Time', seekTime);
-    res.setHeader('X-Proxy-Source', 'cached-file');
+    res.setHeader('X-Proxy-Source', 'enhanced-cached-file');
+    res.setHeader('X-Audio-Processing', hasProcessed.hasAny ? 'available' : 'basic');
     
-    // Handle byte range requests for seeking
+    // Strategy 1: Use pre-processed speed version if available
+    const processedPath = audioProcessor.getProcessedPath(episodeId, playbackSpeed);
+    if (processedPath && playbackSpeed !== 1.0) {
+      console.log(`🎵 Using pre-processed ${playbackSpeed}x version`);
+      return streamProcessedFile(processedPath, seekTime, res);
+    }
+    
+    // Strategy 2: Use seek chunks for precise seeking
+    if (seekTime > 0 && hasProcessed.seekChunks) {
+      const seekChunk = audioProcessor.getSeekChunk(episodeId, seekTime);
+      if (seekChunk) {
+        console.log(`📦 Using seek chunk ${seekChunk.chunkIndex} with remainder ${seekChunk.remainderTime}s`);
+        
+        if (playbackSpeed === 1.0) {
+          // Direct chunk streaming for normal speed
+          return streamProcessedFile(seekChunk.chunkPath, seekChunk.remainderTime, res);
+        } else {
+          // Real-time speed processing from chunk
+          console.log(`🎵 Real-time processing: chunk with ${playbackSpeed}x speed`);
+          return streamAudioWithProcessing(seekChunk.chunkPath, seekChunk.remainderTime, playbackSpeed, res);
+        }
+      }
+    }
+    
+    // Strategy 3: Real-time processing for speed changes or seeking
+    if (playbackSpeed !== 1.0 || seekTime > 0) {
+      console.log(`🎵 Real-time audio processing: ${playbackSpeed}x speed, seek: ${seekTime}s`);
+      return streamAudioWithProcessing(cachedFilePath, seekTime, playbackSpeed, res);
+    }
+    
+    // Strategy 4: Direct file streaming (fallback)
+    console.log(`📁 Direct file streaming (no processing needed)`);
+    return streamProcessedFile(cachedFilePath, 0, res);
+    
+  } catch (error) {
+    console.error(`❌ Enhanced cached streaming error:`, error.message);
+    res.status(500).json({ error: 'Failed to stream cached file' });
+  }
+}
+
+// Stream pre-processed file with basic seeking
+function streamProcessedFile(filePath, seekTime, res) {
+  try {
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    
+    let startByte = 0;
+    if (seekTime > 0) {
+      // Better byte estimation based on 128kbps
+      const estimatedBytesPerSecond = 16000;
+      startByte = Math.min(seekTime * estimatedBytesPerSecond, fileSize - 1);
+      console.log(`⏩ Seeking to byte ${startByte} (estimated from ${seekTime}s)`);
+    }
+    
     if (startByte > 0) {
       const endByte = fileSize - 1;
       const contentLength = endByte - startByte + 1;
       
       res.setHeader('Content-Range', `bytes ${startByte}-${endByte}/${fileSize}`);
       res.setHeader('Content-Length', contentLength);
-      res.status(206); // Partial content
-      
-      console.log(`📊 Serving partial content: bytes ${startByte}-${endByte}/${fileSize}`);
+      res.status(206);
     } else {
       res.setHeader('Content-Length', fileSize);
-      console.log(`📊 Serving full cached file: ${Math.round(fileSize/1024/1024)}MB`);
     }
     
-    // Create readable stream from the cached file
-    const stream = fs.createReadStream(cachedFilePath, { 
+    const stream = fs.createReadStream(filePath, { 
       start: startByte, 
       end: fileSize - 1 
     });
     
-    // Handle streaming errors
     stream.on('error', (streamError) => {
-      console.error(`❌ Cached file stream error:`, streamError.message);
+      console.error(`❌ File stream error:`, streamError.message);
       if (!res.headersSent) {
-        res.status(500).send('Cached file stream error');
+        res.status(500).send('File stream error');
       }
     });
     
-    // Track when streaming completes
-    stream.on('end', () => {
-      console.log(`✅ Cached file streaming completed: ${path.basename(cachedFilePath)}`);
-    });
-    
-    // Pipe the file stream to the response
     stream.pipe(res);
     
   } catch (error) {
-    console.error(`❌ Cached file streaming error:`, error.message);
-    res.status(500).json({ error: 'Failed to stream cached file' });
+    console.error(`❌ File streaming error:`, error.message);
+    throw error;
+  }
+}
+
+// Stream with real-time audio processing
+function streamAudioWithProcessing(inputPath, seekTime, playbackSpeed, res) {
+  try {
+    console.log(`🎵 Starting real-time audio processing stream`);
+    
+    // Create FFmpeg stream for real-time processing
+    const audioStream = audioProcessor.createSpeedStream(inputPath, playbackSpeed, seekTime);
+    
+    // Handle streaming errors
+    audioStream.on('error', (streamError) => {
+      console.error(`❌ FFmpeg stream error:`, streamError.message);
+      if (!res.headersSent) {
+        res.status(500).send('Audio processing stream error');
+      }
+    });
+    
+    audioStream.on('end', () => {
+      console.log(`✅ Real-time audio processing completed`);
+    });
+    
+    // Stream the processed audio
+    audioStream.pipe(res);
+    
+  } catch (error) {
+    console.error(`❌ Audio processing stream error:`, error.message);
+    throw error;
   }
 }
 
@@ -3139,16 +3225,58 @@ app.get('/admin/cache-stats', (req, res) => {
   });
 });
 
-app.post('/admin/cleanup', (req, res) => {
+app.post('/admin/cleanup', async (req, res) => {
   console.log('🧹 Manual cleanup triggered');
   episodeCache.cleanupExpiredEpisodes();
   callerSessions.cleanupOldSessions();
+  const audioCleanedCount = await audioProcessor.cleanup(168);
   
   res.json({ 
     success: true, 
     message: 'Cleanup completed',
+    audioFilesRemoved: audioCleanedCount,
     timestamp: new Date().toISOString()
   });
+});
+
+// Audio processing admin endpoints
+app.get('/admin/audio-stats', (req, res) => {
+  const audioStats = audioProcessor.getStats();
+  const cacheStats = episodeCache.getCacheStats();
+  
+  res.json({
+    audioProcessing: audioStats,
+    episodeCache: cacheStats,
+    systemInfo: {
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      timestamp: new Date().toISOString()
+    }
+  });
+});
+
+app.post('/admin/process-episode', async (req, res) => {
+  const { episodeId, cachedPath } = req.body;
+  
+  if (!episodeId || !cachedPath) {
+    return res.status(400).json({ error: 'episodeId and cachedPath required' });
+  }
+  
+  try {
+    console.log(`🎵 Manual audio processing triggered for: ${episodeId}`);
+    const result = await audioProcessor.processEpisodeComplete(cachedPath, episodeId);
+    
+    res.json({
+      success: true,
+      episodeId,
+      processedVersions: Object.keys(result.speedVersions),
+      hasSeekChunks: !!result.seekChunks,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error(`❌ Manual processing failed:`, error.message);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get('/admin/sessions', (req, res) => {
