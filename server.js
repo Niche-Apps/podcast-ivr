@@ -3,6 +3,7 @@ const express = require('express');
 const twilio = require('twilio');
 const axios = require('axios');
 const path = require('path');
+const fs = require('fs');
 
 // Voice configuration  
 const VOICE_CONFIG = {
@@ -12,8 +13,6 @@ const VOICE_CONFIG = {
 
 // Constants
 const SKIP_DURATION = 120; // 2 minutes for skip forward/back
-const fs = require('fs');
-const path = require('path');
 
 // Import ad system and analytics
 const AdSystem = require('./ad-system');
@@ -38,8 +37,6 @@ app.use('/cached_episodes', express.static(path.join(__dirname, 'cached_episodes
 
 // Debug route to list files in debates folder
 app.get('/debates-list', (req, res) => {
-  const fs = require('fs');
-  const path = require('path');
   
   try {
     const debatesPath = path.join(__dirname, 'public', 'debates');
@@ -822,12 +819,12 @@ async function logPodcastDownload(downloadEvent) {
     const logFile = './podcast_downloads.json';
     let downloads = [];
     
-    if (require('fs').existsSync(logFile)) {
-      downloads = JSON.parse(require('fs').readFileSync(logFile));
+    if (fs.existsSync(logFile)) {
+      downloads = JSON.parse(fs.readFileSync(logFile));
     }
     
     downloads.push(downloadEvent);
-    require('fs').writeFileSync(logFile, JSON.stringify(downloads, null, 2));
+    fs.writeFileSync(logFile, JSON.stringify(downloads, null, 2));
     
   } catch (error) {
     console.error('Error logging download:', error);
@@ -855,9 +852,9 @@ async function getTodayDownloadCount(sponsor) {
   // Get today's download count for sponsor from database
   try {
     const logFile = './podcast_downloads.json';
-    if (!require('fs').existsSync(logFile)) return 0;
+    if (!fs.existsSync(logFile)) return 0;
     
-    const downloads = JSON.parse(require('fs').readFileSync(logFile));
+    const downloads = JSON.parse(fs.readFileSync(logFile));
     const today = new Date().toDateString();
     
     return downloads.filter(d => 
@@ -873,9 +870,9 @@ async function getTodayRevenue(sponsor) {
   // Calculate today's revenue for sponsor
   try {
     const logFile = './podcast_downloads.json';
-    if (!require('fs').existsSync(logFile)) return 0;
+    if (!fs.existsSync(logFile)) return 0;
     
-    const downloads = JSON.parse(require('fs').readFileSync(logFile));
+    const downloads = JSON.parse(fs.readFileSync(logFile));
     const today = new Date().toDateString();
     
     const todayDownloads = downloads.filter(d => 
@@ -2221,7 +2218,6 @@ app.get('/api/feeds/list', (req, res) => {
 
 // Handle cached file streaming with speed and seeking support
 function handleCachedFileStreaming(cachedFilePath, seekTime, playbackSpeed, res) {
-  const fs = require('fs');
   
   try {
     console.log(`📁 Streaming cached file: ${path.basename(cachedFilePath)} (seek: ${seekTime}s, speed: ${playbackSpeed}x)`);
@@ -2315,7 +2311,6 @@ app.get('/proxy-audio/:encodedUrl/:type?/:startTime?/:speedType?/:speed?', async
         console.log(`💾 Cached file request: ${cachedFilePath}`);
         
         // Verify cached file exists
-        const fs = require('fs');
         if (!fs.existsSync(cachedFilePath)) {
           console.error(`❌ Cached file not found: ${cachedFilePath}`);
           return res.status(404).json({ error: 'Cached file not found' });
@@ -3228,33 +3223,7 @@ app.post('/webhook/playback-control', async (req, res) => {
         const backPosition = Math.max(0, actualPosition - 30);
         console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
         twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
-        
-        // Test if seeking is supported for this episode before attempting
-        const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
-        if (podcast) {
-          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
-          const episode = episodes[episodeIndex];
-          if (episode) {
-            const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-            const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-            
-            // Test if seeking is supported for this episode
-            const seekingSupported = await testSeekingSupport(cleanedUrl);
-            
-            if (seekingSupported) {
-              // Range requests supported, proceed with seeking
-              twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
-            } else {
-              // Range requests not supported
-              twiml.say(VOICE_CONFIG, 'Seeking is not supported for this episode. Continuing current playback.');
-              twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
-            }
-          } else {
-            throw new Error('Episode not found');
-          }
-        } else {
-          throw new Error('Podcast not found');
-        }
+        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
       } catch (error) {
         console.error(`❌ Rewind error:`, error.message);
         twiml.say(VOICE_CONFIG, 'Rewind failed. Continuing current playback.');
@@ -3267,33 +3236,7 @@ app.post('/webhook/playback-control', async (req, res) => {
         const forwardPosition = actualPosition + 30;
         console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
         twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
-        
-        // Test if seeking is supported for this episode before attempting
-        const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
-        if (podcast) {
-          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
-          const episode = episodes[episodeIndex];
-          if (episode) {
-            const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-            const encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-            
-            // Test if seeking is supported for this episode
-            const seekingSupported = await testSeekingSupport(cleanedUrl);
-            
-            if (seekingSupported) {
-              // Range requests supported, proceed with seeking
-              twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
-            } else {
-              // Range requests not supported
-              twiml.say(VOICE_CONFIG, 'Seeking is not supported for this episode. Continuing current playback.');
-              twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
-            }
-          } else {
-            throw new Error('Episode not found');
-          }
-        } else {
-          throw new Error('Podcast not found');
-        }
+        twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
       } catch (error) {
         console.error(`❌ Fast forward error:`, error.message);
         twiml.say(VOICE_CONFIG, 'Fast forward failed. Continuing current playback.');
@@ -3430,13 +3373,14 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
     }
     
     // Determine audio source: use cached file if available, otherwise remote URL
-    let playUrl, encodedUrl;
+    let playUrl, encodedUrl, seekingSupported = true; // Default to true, will be overridden for remote files
     
     if (episode.isCached && episode.cachedPath) {
       // Use cached file - seeking always supported for local files
       console.log(`💾 Using cached episode for seeking: ${episode.cachedPath}`);
       const cachedIdentifier = `cached://${path.basename(episode.cachedPath)}`;
       encodedUrl = Buffer.from(cachedIdentifier).toString('base64');
+      seekingSupported = true; // Always true for cached files
       
       if (position > 0) {
         playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}/start/${position}`;
@@ -3448,7 +3392,7 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
       // Use remote URL and test if seeking is supported
       const cleanedUrl = cleanAudioUrl(episode.audioUrl);
       encodedUrl = Buffer.from(cleanedUrl).toString('base64');
-      let seekingSupported = false;
+      seekingSupported = false;
       
       if (position > 0) {
         seekingSupported = await testSeekingSupport(cleanedUrl);
@@ -3463,6 +3407,7 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
       } else {
         // Starting from beginning, no need to test seeking
         playUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+        seekingSupported = true; // No seeking needed when starting from beginning
       }
     }
     
