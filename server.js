@@ -1681,46 +1681,18 @@ app.post('/webhook/select-channel', async (req, res) => {
       }
     }
     
-    // Handle YouTube debates - now fetches MP3s from shared folder
+    // Handle YouTube debates - now with episode caching for consistent controls
     if (selectedPodcast.rssUrl === 'YOUTUBE_DEBATES') {
-      console.log(`🎬 Loading debates from shared sync.com folder`);
+      console.log(`🎬 Loading debates with caching for uniform speed controls`);
       
       try {
-        // Fetch file list from sync.com shared folder
-        const syncFolderUrl = 'https://ln5.sync.com/4.0/dl/34fe51340#teq5fmt7-aktqvy7h-27qrby4k-jevmstab';
-        console.log(`📁 Fetching MP3 files from: ${syncFolderUrl}`);
-        
-        // Dynamic file discovery - test common filename patterns
-        const commonPatterns = [
-          // Common naming patterns
-          'debate1.mp3', 'debate2.mp3', 'debate3.mp3', 'debate4.mp3', 'debate5.mp3',
-          'debate6.mp3', 'debate7.mp3', 'debate8.mp3', 'debate9.mp3', 'debate10.mp3',
-          'file1.mp3', 'file2.mp3', 'file3.mp3', 'file4.mp3', 'file5.mp3',
-          'audio1.mp3', 'audio2.mp3', 'audio3.mp3', 'audio4.mp3', 'audio5.mp3',
-          'track1.mp3', 'track2.mp3', 'track3.mp3', 'track4.mp3', 'track5.mp3',
-          '1.mp3', '2.mp3', '3.mp3', '4.mp3', '5.mp3', '6.mp3', '7.mp3', '8.mp3', '9.mp3', '10.mp3',
-          // Topic-based patterns
-          'catholic.mp3', 'protestant.mp3', 'apologetics.mp3', 'theology.mp3',
-          'jimmy-aiken.mp3', 'james-white.mp3', 'walter-martin.mp3',
-          // Date patterns (common for uploads)
-          '2024-01.mp3', '2024-02.mp3', '2024-03.mp3', '2024-04.mp3', '2024-05.mp3',
-          '2024-06.mp3', '2024-07.mp3', '2024-08.mp3', '2024-09.mp3', '2024-10.mp3',
-          '2024-11.mp3', '2024-12.mp3', '2025-01.mp3', '2025-02.mp3', '2025-03.mp3',
-          // Generic patterns
-          'a.mp3', 'b.mp3', 'c.mp3', 'd.mp3', 'e.mp3',
-          'test.mp3', 'sample.mp3', 'demo.mp3'
-        ];
-        
-        let fileList = [];
-        
-        console.log(`🔍 Using Railway /debates folder that mirrors /Users/josephsee/audio/...`);
-        
-        // Railway debates folder - mirrors your local /Users/josephsee/audio/
-        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+        // Initialize episode cache
+        const episodeCache = new EpisodeCache();
         
         // Dynamically detect MP3 files in the debates folder
         const fs = require('fs');
         const path = require('path');
+        let fileList = [];
         
         try {
           const debatesPath = path.join(__dirname, 'public', 'debates');
@@ -1749,9 +1721,6 @@ app.post('/webhook/select-channel', async (req, res) => {
           fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
         }
         
-        console.log(`📂 Railway debates URL base: ${railwayBaseUrl}`);
-        console.log(`📂 Final file list: ${fileList.join(', ')}`);
-        
         if (fileList.length === 0) {
           twiml.say(VOICE_CONFIG, 'No MP3 files found in shared folder. Please check the folder contents.');
           twiml.redirect('/webhook/ivr-main');
@@ -1759,29 +1728,59 @@ app.post('/webhook/select-channel', async (req, res) => {
           return res.send(twiml.toString());
         }
         
-        // Start playing the first file immediately with podcast-style controls
-        const firstFile = fileList[0];
+        // Create episodes array with local file URLs for caching
+        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+        const episodes = fileList.map((file, index) => ({
+          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+          audioUrl: `${railwayBaseUrl}${file}`,
+          description: `Debate audio file: ${file}`,
+          episodeIndex: index
+        }));
         
-        // Use Railway debates folder hosting
-        const firstFileUrl = `${railwayBaseUrl}${firstFile}`;
-        const filename = firstFile.replace('.mp3', '').replace(/[-_]/g, ' ');
+        console.log(`📂 Created ${episodes.length} debate episodes for caching`);
         
-        console.log(`🎵 Auto-playing first file: ${firstFile}`);
+        // Cache the first episode for immediate playback with speed controls
+        const firstEpisode = episodes[0];
+        let cachedPath = null;
         
-        twiml.say(VOICE_CONFIG, `Welcome to Debates. Playing: ${filename}. Use 1 and 3 for episode navigation, 4 and 6 for seek, 2 and 5 for speed, or star to resume.`);
+        try {
+          // Check if already cached
+          if (episodeCache.isCached('debates', firstEpisode.audioUrl)) {
+            cachedPath = episodeCache.getCachedEpisodePath('debates', firstEpisode.audioUrl);
+            console.log(`✅ First debate already cached: ${cachedPath}`);
+          } else {
+            // Cache the first episode
+            console.log(`📥 Caching first debate for speed controls: ${firstEpisode.title}`);
+            cachedPath = await episodeCache.cacheEpisode('debates', firstEpisode.audioUrl, firstEpisode.title, 'temporary');
+            console.log(`✅ First debate cached: ${cachedPath}`);
+          }
+        } catch (cacheError) {
+          console.warn(`⚠️ Caching failed, using direct URL: ${cacheError.message}`);
+          cachedPath = null;
+        }
         
-        // Play the first MP3 file
-        twiml.play(firstFileUrl);
+        // Use cached path if available, otherwise fallback to direct URL
+        const playbackUrl = cachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(cachedPath)}` : 
+          firstEpisode.audioUrl;
         
-        // Add podcast-style navigation controls
+        console.log(`🎵 Auto-playing first debate: ${firstEpisode.title}`);
+        console.log(`🎵 Playback URL: ${playbackUrl.substring(0, 100)}...`);
+        
+        twiml.say(VOICE_CONFIG, `Welcome to Debates. Playing: ${firstEpisode.title}. Use 1 and 3 for episode navigation, 4 and 6 for seek, 2 and 5 for speed control.`);
+        
+        // Play the first debate file with speed control support
+        twiml.play(playbackUrl);
+        
+        // Add enhanced navigation controls that work with caching
         const gather = twiml.gather({
           numDigits: 1,
           timeout: 30,
-          action: `/webhook/debate-controls?currentIndex=0&totalFiles=${fileList.length}&position=0&startTime=${Date.now()}`,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=0&position=0&startTime=${Date.now()}`,
           method: 'POST'
         });
         
-        gather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        gather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
         
         twiml.say(VOICE_CONFIG, 'Returning to main menu.');
         twiml.redirect('/webhook/ivr-main');
@@ -3039,9 +3038,35 @@ app.all('/webhook/play-episode', async (req, res) => {
       finalAudioUrl = episode.audioUrl;
     }
     
-    // Check for cached episode first
-    const audioUrl = episode.cachedPath ? 
-      `https://${req.get('host')}/cached_episodes/${path.basename(episode.cachedPath)}` : 
+    // Initialize episode cache for on-demand caching
+    const episodeCache = new EpisodeCache();
+    let cachedPath = episode.cachedPath;
+    
+    // Cache episode on demand if not already cached and file size is reasonable
+    if (!cachedPath && episode.fileSizeMB && episode.fileSizeMB <= 100) {
+      try {
+        console.log(`📥 Caching episode on demand for uniform controls: ${episode.title.substring(0, 50)}`);
+        
+        // Check if already cached by URL
+        if (episodeCache.isCached(channel, finalAudioUrl)) {
+          cachedPath = episodeCache.getCachedEpisodePath(channel, finalAudioUrl);
+          console.log(`✅ Episode already cached: ${cachedPath}`);
+        } else {
+          // Cache the episode for enhanced playback controls
+          cachedPath = await episodeCache.cacheEpisode(channel, finalAudioUrl, episode.title, 'temporary');
+          console.log(`✅ Episode cached successfully: ${cachedPath}`);
+        }
+      } catch (cacheError) {
+        console.warn(`⚠️ On-demand caching failed, using stream: ${cacheError.message}`);
+        cachedPath = null;
+      }
+    } else if (episode.fileSizeMB && episode.fileSizeMB > 100) {
+      console.log(`⚠️ Skipping cache for large file (${episode.fileSizeMB}MB), using stream`);
+    }
+    
+    // Use cached file if available, otherwise use cleaned URL
+    const audioUrl = cachedPath ? 
+      `https://${req.get('host')}/cached_episodes/${path.basename(cachedPath)}` : 
       finalAudioUrl;
     
     // Get caller info for session tracking
@@ -3062,11 +3087,11 @@ app.all('/webhook/play-episode', async (req, res) => {
       timeout: 30
     });
     
-    // Use cached file if available, otherwise proxy the original URL
+    // Use cached file if available (including newly cached), otherwise proxy the original URL
     let playbackUrl;
-    if (episode.cachedPath) {
-      playbackUrl = `https://${req.get('host')}/cached_episodes/${path.basename(episode.cachedPath)}`;
-      console.log(`📦 Playing cached episode: ${path.basename(episode.cachedPath)}`);
+    if (cachedPath) {
+      playbackUrl = `https://${req.get('host')}/cached_episodes/${path.basename(cachedPath)}`;
+      console.log(`📦 Playing cached episode: ${path.basename(cachedPath)}`);
     } else {
       const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
       playbackUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
@@ -4576,6 +4601,279 @@ app.all('/webhook/sermon-controls', async (req, res) => {
   } catch (error) {
     console.error('❌ Error in sermon controls:', error);
     twiml.say(VOICE_CONFIG, 'Sorry, there was an error with sermon playback controls.');
+    twiml.redirect('/webhook/ivr-main');
+  }
+  
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+// Enhanced debate playback controls that work with episode caching for uniform speed control
+app.all('/webhook/debate-playback-control', async (req, res) => {
+  const channel = req.query.channel || req.body.channel;
+  const episodeIndex = parseInt(req.query.episodeIndex || req.body.episodeIndex) || 0;
+  const position = parseInt(req.query.position || req.body.position) || 0;
+  const startTime = parseInt(req.query.startTime) || Date.now();
+  const digits = req.body.Digits;
+  const callerId = req.body.From || req.body.Caller;
+  
+  console.log(`🎵 Enhanced debate controls: ${digits}, episodeIndex: ${episodeIndex}, position: ${position}s`);
+  
+  const twiml = new VoiceResponse();
+  
+  try {
+    // Initialize episode cache
+    const episodeCache = new EpisodeCache();
+    
+    // Get debate files from local folder
+    const fs = require('fs');
+    const path = require('path');
+    let fileList = [];
+    
+    try {
+      const debatesPath = path.join(__dirname, 'public', 'debates');
+      const files = fs.readdirSync(debatesPath);
+      const mp3Files = files
+        .filter(file => file.toLowerCase().endsWith('.mp3'))
+        .sort();
+      
+      if (mp3Files.length > 0) {
+        fileList = mp3Files;
+      } else {
+        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+      }
+    } catch (fsError) {
+      console.error(`❌ Error reading debates folder: ${fsError.message}`);
+      fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+    }
+    
+    // Create episodes array
+    const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+    const episodes = fileList.map((file, index) => ({
+      title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+      audioUrl: `${railwayBaseUrl}${file}`,
+      description: `Debate audio file: ${file}`,
+      episodeIndex: index
+    }));
+    
+    // Calculate actual position based on playback time
+    const playbackDuration = Math.floor((Date.now() - startTime) / 1000);
+    const playbackSpeed = callerSessions.getPlaybackSpeed(callerId) || 1.0;
+    const actualPosition = position + Math.floor(playbackDuration * playbackSpeed);
+    
+    switch(digits) {
+      case '1': // Previous episode
+        const prevIndex = episodeIndex > 0 ? episodeIndex - 1 : episodes.length - 1;
+        const prevEpisode = episodes[prevIndex];
+        
+        console.log(`⏮️ Playing previous debate: ${prevEpisode.title} (index ${prevIndex})`);
+        
+        // Cache and play previous episode
+        let prevCachedPath = null;
+        try {
+          if (episodeCache.isCached('debates', prevEpisode.audioUrl)) {
+            prevCachedPath = episodeCache.getCachedEpisodePath('debates', prevEpisode.audioUrl);
+          } else {
+            prevCachedPath = await episodeCache.cacheEpisode('debates', prevEpisode.audioUrl, prevEpisode.title, 'temporary');
+          }
+        } catch (cacheError) {
+          console.warn(`⚠️ Caching failed for previous episode: ${cacheError.message}`);
+        }
+        
+        const prevPlaybackUrl = prevCachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(prevCachedPath)}` : 
+          prevEpisode.audioUrl;
+        
+        twiml.say(VOICE_CONFIG, `Previous episode: ${prevEpisode.title}`);
+        twiml.play(prevPlaybackUrl);
+        
+        const prevGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=${prevIndex}&position=0&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        prevGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '3': // Next episode
+        const nextIndex = (episodeIndex + 1) % episodes.length;
+        const nextEpisode = episodes[nextIndex];
+        
+        console.log(`⏭️ Playing next debate: ${nextEpisode.title} (index ${nextIndex})`);
+        
+        // Cache and play next episode
+        let nextCachedPath = null;
+        try {
+          if (episodeCache.isCached('debates', nextEpisode.audioUrl)) {
+            nextCachedPath = episodeCache.getCachedEpisodePath('debates', nextEpisode.audioUrl);
+          } else {
+            nextCachedPath = await episodeCache.cacheEpisode('debates', nextEpisode.audioUrl, nextEpisode.title, 'temporary');
+          }
+        } catch (cacheError) {
+          console.warn(`⚠️ Caching failed for next episode: ${cacheError.message}`);
+        }
+        
+        const nextPlaybackUrl = nextCachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(nextCachedPath)}` : 
+          nextEpisode.audioUrl;
+        
+        twiml.say(VOICE_CONFIG, `Next episode: ${nextEpisode.title}`);
+        twiml.play(nextPlaybackUrl);
+        
+        const nextGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=${nextIndex}&position=0&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        nextGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '4': // Rewind 30 seconds
+        const backPosition = Math.max(0, actualPosition - 30);
+        console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
+        
+        const currentEpisodeRewind = episodes[episodeIndex];
+        
+        // Use cached version if available
+        let rewindCachedPath = episodeCache.getCachedEpisodePath('debates', currentEpisodeRewind.audioUrl);
+        const rewindPlaybackUrl = rewindCachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(rewindCachedPath)}` : 
+          currentEpisodeRewind.audioUrl;
+        
+        twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
+        twiml.play(rewindPlaybackUrl);
+        
+        const rewindGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=${episodeIndex}&position=${backPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        rewindGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '6': // Fast forward 30 seconds
+        const forwardPosition = actualPosition + 30;
+        console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
+        
+        const currentEpisodeForward = episodes[episodeIndex];
+        
+        // Use cached version if available
+        let forwardCachedPath = episodeCache.getCachedEpisodePath('debates', currentEpisodeForward.audioUrl);
+        const forwardPlaybackUrl = forwardCachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(forwardCachedPath)}` : 
+          currentEpisodeForward.audioUrl;
+        
+        twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
+        twiml.play(forwardPlaybackUrl);
+        
+        const ffGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=${episodeIndex}&position=${forwardPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        ffGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '2': // Decrease playback speed
+        const currentSpeed = callerSessions.getPlaybackSpeed(callerId) || 1.0;
+        const newSlowSpeed = Math.max(0.5, currentSpeed - 0.25);
+        callerSessions.updatePlaybackSpeed(callerId, newSlowSpeed);
+        console.log(`🐌 Speed decreased: ${currentSpeed}x -> ${newSlowSpeed}x`);
+        
+        const currentEpisodeSlow = episodes[episodeIndex];
+        
+        // Use cached version for speed control
+        let slowCachedPath = episodeCache.getCachedEpisodePath('debates', currentEpisodeSlow.audioUrl);
+        const slowPlaybackUrl = slowCachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(slowCachedPath)}` : 
+          currentEpisodeSlow.audioUrl;
+        
+        twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSlowSpeed} times normal.`);
+        twiml.play({ rate: newSlowSpeed }, slowPlaybackUrl);
+        
+        const speedGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        speedGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '5': // Increase playback speed
+        const currentFastSpeed = callerSessions.getPlaybackSpeed(callerId) || 1.0;
+        const newFastSpeed = Math.min(2.0, currentFastSpeed + 0.25);
+        callerSessions.updatePlaybackSpeed(callerId, newFastSpeed);
+        console.log(`🏃 Speed increased: ${currentFastSpeed}x -> ${newFastSpeed}x`);
+        
+        const currentEpisodeFast = episodes[episodeIndex];
+        
+        // Use cached version for speed control
+        let fastCachedPath = episodeCache.getCachedEpisodePath('debates', currentEpisodeFast.audioUrl);
+        const fastPlaybackUrl = fastCachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(fastCachedPath)}` : 
+          currentEpisodeFast.audioUrl;
+        
+        twiml.say(VOICE_CONFIG, `Playback speed increased to ${newFastSpeed} times normal.`);
+        twiml.play({ rate: newFastSpeed }, fastPlaybackUrl);
+        
+        const fastGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        fastGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      case '*': // Return to main menu
+        console.log(`🏠 Returning to main menu from debates`);
+        twiml.say(VOICE_CONFIG, 'Returning to main menu.');
+        twiml.redirect('/webhook/ivr-main');
+        break;
+        
+      default:
+        // Continue current episode
+        const currentEpisodeDefault = episodes[episodeIndex];
+        
+        // Use cached version if available
+        let defaultCachedPath = episodeCache.getCachedEpisodePath('debates', currentEpisodeDefault.audioUrl);
+        const defaultPlaybackUrl = defaultCachedPath ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(defaultCachedPath)}` : 
+          currentEpisodeDefault.audioUrl;
+        
+        twiml.say(VOICE_CONFIG, 'Continuing current debate.');
+        twiml.play(defaultPlaybackUrl);
+        
+        const defaultGather = twiml.gather({
+          numDigits: 1,
+          timeout: 30,
+          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`,
+          method: 'POST'
+        });
+        
+        defaultGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.redirect('/webhook/ivr-main');
+    }
+  } catch (error) {
+    console.error('❌ Error in enhanced debate controls:', error);
+    twiml.say(VOICE_CONFIG, 'Sorry, there was an error with playback controls.');
     twiml.redirect('/webhook/ivr-main');
   }
   
