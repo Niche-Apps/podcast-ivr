@@ -12,8 +12,18 @@ channel-test-results.json
 # Build artifacts and distributions
 gui/dist/
 gui/node_modules/
+gui/package.json
+gui/package-lock.json
+gui/index.html
+gui/main.js
+gui/vite.config.js
+gui/assets/
 launcher-app/dist/
 launcher-app/node_modules/
+launcher-app/main.js
+launcher-app/package.json
+launcher-app/package-lock.json
+launch-gui.sh
 
 # Audio files (too large for git/railway)
 generated_audio/
