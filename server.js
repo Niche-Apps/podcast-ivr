@@ -1830,11 +1830,11 @@ app.post('/webhook/select-channel', async (req, res) => {
         // Play the first debate file with speed control support
         twiml.play(playbackUrl);
         
-        // Add enhanced navigation controls that work with caching
+        // Add simple navigation controls that actually work
         const gather = twiml.gather({
           numDigits: 1,
           timeout: 30,
-          action: `/webhook/debate-playback-control?channel=debates&episodeIndex=0&position=0&startTime=${Date.now()}`,
+          action: `/webhook/debate-controls?currentIndex=0&totalFiles=${fileList.length}&position=0&startTime=${Date.now()}`,
           method: 'POST'
         });
         
@@ -3416,7 +3416,54 @@ app.post('/webhook/playback-control', async (req, res) => {
   let currentEpisode = null;
   let seamlessSwitch = false;
   
-  if (podcast) {
+  // Special handling for debates (channel 50)
+  if (channel === '50' && podcast && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+    try {
+      // Get debate files from local folder for debates
+      const fs = require('fs');
+      const path = require('path');
+      let fileList = [];
+      
+      try {
+        const debatesPath = path.join(__dirname, 'public', 'debates');
+        const files = fs.readdirSync(debatesPath);
+        const mp3Files = files
+          .filter(file => file.toLowerCase().endsWith('.mp3'))
+          .sort();
+        
+        if (mp3Files.length > 0) {
+          fileList = mp3Files;
+        } else {
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
+      } catch (fsError) {
+        console.error(`❌ Error reading debates folder: ${fsError.message}`);
+        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+      }
+      
+      // Create episodes array for debates
+      const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+      const debateEpisodes = fileList.map((file, index) => ({
+        title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+        audioUrl: `${railwayBaseUrl}${file}`,
+        description: `Debate audio file: ${file}`,
+        episodeIndex: index
+      }));
+      
+      if (debateEpisodes[episodeIndex]) {
+        currentEpisode = debateEpisodes[episodeIndex];
+        callerSessions.updatePosition(callerId, channel, currentEpisode.audioUrl, actualPosition, currentEpisode.title);
+        
+        // Check if background caching completed for seamless switch
+        if (episodeCache.isCached('debates', currentEpisode.audioUrl) && !currentEpisode.cachedPath) {
+          console.log(`🔄 Background cache completed! Seamless switch available for: ${currentEpisode.title.substring(0, 50)}`);
+          seamlessSwitch = true;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to update caller position for debates:', error.message);
+    }
+  } else if (podcast) {
     try {
       const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
       currentEpisode = episodes[episodeIndex];
@@ -4506,6 +4553,8 @@ app.all('/webhook/debate-controls', async (req, res) => {
         console.log(`🐌 Speed decreased: ${currentSpeed}x -> ${newSlowSpeed}x`);
         
         twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSlowSpeed} times normal.`);
+        
+        // Continue current file at new speed
         const currentFileSpeed = fileList[currentIndex];
         const currentFileUrlSpeed = `${railwayBaseUrl}${currentFileSpeed}`;
         twiml.play({ rate: newSlowSpeed }, currentFileUrlSpeed);
@@ -4517,7 +4566,8 @@ app.all('/webhook/debate-controls', async (req, res) => {
           method: 'POST'
         });
         
-        speedGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        speedGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.say(VOICE_CONFIG, 'Returning to main menu.');
         twiml.redirect('/webhook/ivr-main');
         break;
         
@@ -4528,6 +4578,8 @@ app.all('/webhook/debate-controls', async (req, res) => {
         console.log(`🏃 Speed increased: ${currentFastSpeed}x -> ${newFastSpeed}x`);
         
         twiml.say(VOICE_CONFIG, `Playback speed increased to ${newFastSpeed} times normal.`);
+        
+        // Continue current file at new speed
         const currentFileFast = fileList[currentIndex];
         const currentFileUrlFast = `${railwayBaseUrl}${currentFileFast}`;
         twiml.play({ rate: newFastSpeed }, currentFileUrlFast);
@@ -4539,7 +4591,8 @@ app.all('/webhook/debate-controls', async (req, res) => {
           method: 'POST'
         });
         
-        fastGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star to resume.');
+        fastGather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        twiml.say(VOICE_CONFIG, 'Returning to main menu.');
         twiml.redirect('/webhook/ivr-main');
         break;
         
