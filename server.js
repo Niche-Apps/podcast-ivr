@@ -1531,11 +1531,69 @@ async function startServer() {
       console.log(`   GET  /webhook/play-episode    - Stream episodes`);
       console.log(`   POST /webhook/playback-control - Playback controls`);
       console.log('\n🚀 Railway deployment ready for Twilio webhooks!');
+      
+      // Initialize intelligent episode caching system
+      initializeCachingSystem();
     });
     
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
+  }
+}
+
+// Initialize intelligent episode caching system
+async function initializeCachingSystem() {
+  console.log('\n🚀 Initializing intelligent episode caching system...');
+  
+  try {
+    const episodeCache = new EpisodeCache();
+    
+    // Clean up expired episodes first
+    episodeCache.cleanupExpiredEpisodes();
+    
+    // Get all podcast channels for preloading
+    const allChannels = { ...ALL_PODCASTS, ...EXTENSION_PODCASTS };
+    
+    // Preload latest episodes for all channels in background
+    setTimeout(async () => {
+      try {
+        await episodeCache.preloadLatestEpisodes(allChannels, fetchPodcastEpisodes);
+      } catch (error) {
+        console.error('❌ Error during latest episodes preload:', error.message);
+      }
+    }, 5000); // Wait 5 seconds after server start
+    
+    // Set up periodic checks for newer episodes (every 30 minutes)
+    setInterval(async () => {
+      try {
+        console.log('🔍 Running periodic check for newer episodes...');
+        
+        for (const [channelId, podcast] of Object.entries(allChannels)) {
+          if (podcast.rssUrl && !podcast.rssUrl.startsWith('STATIC_') && !podcast.rssUrl.startsWith('YOUTUBE_')) {
+            const latestCached = episodeCache.getLatestCachedEpisode(channelId);
+            
+            if (latestCached) {
+              const currentLatestUrl = latestCached.episode.episodeUrl;
+              await episodeCache.checkForNewerEpisodes(channelId, currentLatestUrl, fetchPodcastEpisodes, podcast.rssUrl);
+            }
+          }
+        }
+        
+        // Also cleanup expired episodes during periodic check
+        episodeCache.cleanupExpiredEpisodes();
+        
+      } catch (error) {
+        console.error('❌ Error during periodic episode check:', error.message);
+      }
+    }, 30 * 60 * 1000); // 30 minutes
+    
+    console.log('✅ Intelligent caching system initialized');
+    console.log('📥 Latest episodes will be preloaded in background');
+    console.log('🔄 Periodic checks every 30 minutes for newer episodes');
+    
+  } catch (error) {
+    console.error('❌ Failed to initialize caching system:', error.message);
   }
 }
 
@@ -3038,30 +3096,33 @@ app.all('/webhook/play-episode', async (req, res) => {
       finalAudioUrl = episode.audioUrl;
     }
     
-    // Initialize episode cache for on-demand caching
+    // Initialize episode cache for intelligent caching strategy
     const episodeCache = new EpisodeCache();
     let cachedPath = episode.cachedPath;
     
-    // Cache episode on demand if not already cached and file size is reasonable
-    if (!cachedPath && episode.fileSizeMB && episode.fileSizeMB <= 100) {
-      try {
-        console.log(`📥 Caching episode on demand for uniform controls: ${episode.title.substring(0, 50)}`);
-        
-        // Check if already cached by URL
-        if (episodeCache.isCached(channel, finalAudioUrl)) {
-          cachedPath = episodeCache.getCachedEpisodePath(channel, finalAudioUrl);
-          console.log(`✅ Episode already cached: ${cachedPath}`);
-        } else {
-          // Cache the episode for enhanced playback controls
-          cachedPath = await episodeCache.cacheEpisode(channel, finalAudioUrl, episode.title, 'temporary');
-          console.log(`✅ Episode cached successfully: ${cachedPath}`);
+    // Check if already cached
+    if (episodeCache.isCached(channel, finalAudioUrl)) {
+      cachedPath = episodeCache.getCachedEpisodePath(channel, finalAudioUrl);
+      console.log(`✅ Episode already cached: ${path.basename(cachedPath)}`);
+    } else {
+      // For the latest episode (index 0), cache immediately for best experience
+      if (episodeIndex === 0) {
+        try {
+          console.log(`📥 Caching latest episode for immediate playback: ${episode.title.substring(0, 50)}`);
+          cachedPath = await episodeCache.cacheEpisode(channel, finalAudioUrl, episode.title, 'latest');
+          console.log(`✅ Latest episode cached successfully: ${path.basename(cachedPath)}`);
+        } catch (cacheError) {
+          console.warn(`⚠️ Latest episode caching failed, using stream: ${cacheError.message}`);
+          cachedPath = null;
         }
-      } catch (cacheError) {
-        console.warn(`⚠️ On-demand caching failed, using stream: ${cacheError.message}`);
-        cachedPath = null;
+      } else {
+        // For older episodes, start background caching and play immediately
+        const backgroundStarted = episodeCache.startBackgroundCaching(channel, finalAudioUrl, episode.title);
+        if (backgroundStarted) {
+          console.log(`📥 Started background caching for older episode: ${episode.title.substring(0, 50)}`);
+        }
+        cachedPath = null; // Play from stream initially
       }
-    } else if (episode.fileSizeMB && episode.fileSizeMB > 100) {
-      console.log(`⚠️ Skipping cache for large file (${episode.fileSizeMB}MB), using stream`);
     }
     
     // Use cached file if available, otherwise use cleaned URL
@@ -3349,14 +3410,25 @@ app.post('/webhook/playback-control', async (req, res) => {
   
   const twiml = new VoiceResponse();
   
-  // Update caller's position
+  // Update caller's position and check for background cache completion
   const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
+  const episodeCache = new EpisodeCache();
+  let currentEpisode = null;
+  let seamlessSwitch = false;
+  
   if (podcast) {
     try {
       const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
-      const episode = episodes[episodeIndex];
-      if (episode) {
-        callerSessions.updatePosition(callerId, channel, episode.audioUrl, actualPosition, episode.title);
+      currentEpisode = episodes[episodeIndex];
+      if (currentEpisode) {
+        callerSessions.updatePosition(callerId, channel, currentEpisode.audioUrl, actualPosition, currentEpisode.title);
+        
+        // Check if background caching completed for seamless switch
+        const cleanedUrl = cleanAudioUrl(currentEpisode.audioUrl);
+        if (episodeCache.isCached(channel, cleanedUrl) && !currentEpisode.cachedPath) {
+          console.log(`🔄 Background cache completed! Seamless switch available for: ${currentEpisode.title.substring(0, 50)}`);
+          seamlessSwitch = true;
+        }
       }
     } catch (error) {
       console.warn('Failed to update caller position:', error.message);
@@ -3493,7 +3565,42 @@ app.post('/webhook/playback-control', async (req, res) => {
       twiml.redirect('/webhook/ivr-main');
       break;
       
+    case '#': // Seamless switch to cached version (if available)
+      if (seamlessSwitch && currentEpisode) {
+        try {
+          const cleanedUrl = cleanAudioUrl(currentEpisode.audioUrl);
+          const cachedPath = episodeCache.getCachedEpisodePath(channel, cleanedUrl);
+          if (cachedPath) {
+            console.log(`🔄 Manual seamless switch to cached version: ${currentEpisode.title.substring(0, 50)}`);
+            twiml.say(VOICE_CONFIG, 'Switching to enhanced quality with full speed controls.');
+            twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex}&cached=true`);
+            break;
+          }
+        } catch (error) {
+          console.error('❌ Seamless switch error:', error.message);
+        }
+      }
+      twiml.say(VOICE_CONFIG, 'Enhanced version not yet available.');
+      twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&startTime=${Date.now()}`);
+      break;
+      
     default:
+      // Check for automatic seamless switch opportunity
+      if (seamlessSwitch && currentEpisode) {
+        try {
+          const cleanedUrl = cleanAudioUrl(currentEpisode.audioUrl);
+          const cachedPath = episodeCache.getCachedEpisodePath(channel, cleanedUrl);
+          if (cachedPath) {
+            console.log(`🎯 Auto seamless switch triggered: ${currentEpisode.title.substring(0, 50)}`);
+            twiml.say(VOICE_CONFIG, 'Enhanced version now available with full speed controls.');
+            twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=${episodeIndex}&cached=true&position=${actualPosition}`);
+            break;
+          }
+        } catch (error) {
+          console.error('❌ Auto seamless switch error:', error.message);
+        }
+      }
+      
       // Continue to next episode (continuous playback)
       twiml.redirect(`/webhook/episode-finished?channel=${channel}&episodeIndex=${episodeIndex}`);
   }

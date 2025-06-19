@@ -6,8 +6,9 @@ class EpisodeCache {
   constructor() {
     this.cacheDir = path.join(__dirname, 'cached_episodes');
     this.metadataFile = path.join(this.cacheDir, 'cache_metadata.json');
-    this.maxCacheSize = 2000; // 2GB limit
+    this.maxCacheSize = 10000; // 10GB limit - increased for better coverage
     this.ensureCacheDirectory();
+    this.backgroundJobs = new Map(); // Track background caching jobs
   }
 
   ensureCacheDirectory() {
@@ -60,11 +61,11 @@ class EpisodeCache {
       return false;
     }
     
-    // Check if latest episode (permanent) or temporary (24 hours)
+    // Check if latest episode (permanent until replaced) or temporary (48 hours)
     if (episode.type === 'latest') {
       return true;
     } else if (episode.type === 'temporary') {
-      const isExpired = Date.now() - episode.downloadTime > 24 * 60 * 60 * 1000; // 24 hours
+      const isExpired = Date.now() - episode.downloadTime > 48 * 60 * 60 * 1000; // 48 hours
       if (isExpired) {
         this.removeEpisode(cacheKey);
         return false;
@@ -183,9 +184,9 @@ class EpisodeCache {
     Object.keys(metadata.episodes).forEach(cacheKey => {
       const episode = metadata.episodes[cacheKey];
       
-      // Remove temporary episodes older than 24 hours
+      // Remove temporary episodes older than 48 hours
       if (episode.type === 'temporary') {
-        const isExpired = now - episode.downloadTime > 24 * 60 * 60 * 1000;
+        const isExpired = now - episode.downloadTime > 48 * 60 * 60 * 1000;
         if (isExpired) {
           this.removeEpisode(cacheKey);
           cleanedCount++;
@@ -233,6 +234,120 @@ class EpisodeCache {
       // Download new latest episode
       await this.cacheEpisode(channelId, latestEpisodeUrl, episodeTitle, 'latest');
     }
+  }
+
+  // Start background caching for an episode without blocking caller
+  startBackgroundCaching(channelId, episodeUrl, episodeTitle) {
+    const cacheKey = this.getCacheKey(channelId, episodeUrl);
+    
+    // Don't start if already caching or cached
+    if (this.backgroundJobs.has(cacheKey) || this.isCached(channelId, episodeUrl)) {
+      return false;
+    }
+    
+    console.log(`📥 Starting background cache: ${episodeTitle.substring(0, 50)}`);
+    
+    // Start background job
+    const promise = this.cacheEpisode(channelId, episodeUrl, episodeTitle, 'temporary')
+      .then(filePath => {
+        console.log(`✅ Background cache completed: ${episodeTitle.substring(0, 50)}`);
+        this.backgroundJobs.delete(cacheKey);
+        return filePath;
+      })
+      .catch(error => {
+        console.error(`❌ Background cache failed: ${episodeTitle.substring(0, 50)} - ${error.message}`);
+        this.backgroundJobs.delete(cacheKey);
+        return null;
+      });
+    
+    this.backgroundJobs.set(cacheKey, promise);
+    return true;
+  }
+
+  // Check if episode is currently being cached in background
+  isBackgroundCaching(channelId, episodeUrl) {
+    const cacheKey = this.getCacheKey(channelId, episodeUrl);
+    return this.backgroundJobs.has(cacheKey);
+  }
+
+  // Get background caching promise if exists
+  getBackgroundCachingPromise(channelId, episodeUrl) {
+    const cacheKey = this.getCacheKey(channelId, episodeUrl);
+    return this.backgroundJobs.get(cacheKey);
+  }
+
+  // Check for newer episodes and update latest cache
+  async checkForNewerEpisodes(channelId, currentLatestUrl, fetchEpisodesFunction, rssUrl) {
+    try {
+      console.log(`🔍 Checking for newer episodes on channel ${channelId}`);
+      
+      // Fetch the latest episode from RSS
+      const episodes = await fetchEpisodesFunction(rssUrl, 0, 1, channelId);
+      
+      if (episodes && episodes.length > 0) {
+        const latestEpisode = episodes[0];
+        
+        // If the latest episode URL is different from what we have cached
+        if (latestEpisode.audioUrl !== currentLatestUrl) {
+          console.log(`🆕 New episode detected for channel ${channelId}: ${latestEpisode.title.substring(0, 50)}`);
+          
+          // Cache the new latest episode
+          await this.ensureLatestEpisode(channelId, latestEpisode.audioUrl, latestEpisode.title);
+          
+          return {
+            hasNewer: true,
+            newEpisode: latestEpisode
+          };
+        }
+      }
+      
+      return { hasNewer: false };
+      
+    } catch (error) {
+      console.error(`❌ Failed to check for newer episodes on channel ${channelId}: ${error.message}`);
+      return { hasNewer: false };
+    }
+  }
+
+  // Get the latest cached episode for a channel
+  getLatestCachedEpisode(channelId) {
+    const metadata = this.loadMetadata();
+    
+    for (const [cacheKey, episode] of Object.entries(metadata.episodes)) {
+      if (episode.channelId === channelId && episode.type === 'latest') {
+        return {
+          cacheKey,
+          episode,
+          filePath: this.getCachedEpisodePath(channelId, episode.episodeUrl)
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  // Preload latest episodes for all active channels
+  async preloadLatestEpisodes(channels, fetchEpisodesFunction) {
+    console.log(`🚀 Preloading latest episodes for ${Object.keys(channels).length} channels`);
+    
+    const promises = Object.entries(channels).map(async ([channelId, podcast]) => {
+      try {
+        if (podcast.rssUrl && !podcast.rssUrl.startsWith('STATIC_') && !podcast.rssUrl.startsWith('YOUTUBE_')) {
+          const episodes = await fetchEpisodesFunction(podcast.rssUrl, 0, 1, channelId);
+          
+          if (episodes && episodes.length > 0) {
+            const latestEpisode = episodes[0];
+            await this.ensureLatestEpisode(channelId, latestEpisode.audioUrl, latestEpisode.title);
+            console.log(`✅ Preloaded latest for ${podcast.name}: ${latestEpisode.title.substring(0, 40)}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to preload latest for ${podcast.name}: ${error.message}`);
+      }
+    });
+    
+    await Promise.allSettled(promises);
+    console.log(`🎯 Latest episode preloading completed`);
   }
 }
 
