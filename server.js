@@ -4313,6 +4313,65 @@ app.get('/api/feedback/download/:callSid', async (req, res) => {
   }
 });
 
+// Test endpoint to generate realistic analytics data
+app.get('/api/test-analytics', async (req, res) => {
+  try {
+    // Create some realistic test call sessions
+    const testCalls = [
+      {
+        phoneNumber: '9183887174',
+        duration: 180,
+        listeningTime: 150,
+        extension: '1',
+        channelName: 'NPR News Now'
+      },
+      {
+        phoneNumber: '5551234567', 
+        duration: 300,
+        listeningTime: 280,
+        extension: '2',
+        channelName: 'Weather Update'
+      },
+      {
+        phoneNumber: '4045551234',
+        duration: 450,
+        listeningTime: 420,
+        extension: '50',
+        channelName: 'Debates'
+      }
+    ];
+
+    for (const call of testCalls) {
+      const testCallSid = 'realistic_test_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      
+      // Start session
+      const session = analytics.startSession(testCallSid, call.phoneNumber);
+      
+      // Track channel selection
+      analytics.trackChannelSelection(testCallSid, call.extension, call.channelName);
+      
+      // Simulate listening time
+      session.channelStartTime = new Date(Date.now() - call.listeningTime * 1000);
+      session.totalListeningTime = call.listeningTime;
+      if (session.currentChannel) {
+        session.currentChannel.listeningTime = call.listeningTime;
+      }
+      
+      // End session
+      analytics.endSession(testCallSid, 'hangup');
+    }
+
+    res.json({
+      success: true,
+      message: 'Realistic test analytics data created',
+      testCallsGenerated: testCalls.length
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Test endpoint for ad system
 app.get('/api/test-ads/:phoneNumber', async (req, res) => {
   try {
