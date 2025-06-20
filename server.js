@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-// Voice configuration  
+// Voice configuration - Channel 50 fixes deployed
 const VOICE_CONFIG = {
     voice: 'Polly.Brian',
     language: 'en-GB'
