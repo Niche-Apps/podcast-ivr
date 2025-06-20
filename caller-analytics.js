@@ -344,6 +344,29 @@ class CallerAnalytics {
     return this.data.callerProfiles[normalized] || null;
   }
 
+  // Get detailed analytics for all callers (for GUI table)
+  getDetailedAnalytics() {
+    return Object.entries(this.data.callerProfiles).map(([phoneNumber, profile]) => {
+      // Find most recent call for this number
+      const recentCalls = this.data.calls
+        .filter(call => call.callerNumber === phoneNumber)
+        .sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
+      
+      const lastCall = recentCalls[0];
+      const lastExtension = lastCall?.channels?.[lastCall.channels.length - 1]?.channelId || 'N/A';
+      
+      return {
+        phoneNumber,
+        totalCalls: profile.totalCalls,
+        totalListeningTime: Math.round(profile.totalListeningTime),
+        lastCallTime: profile.lastCall || profile.firstCall,
+        lastCallDuration: lastCall?.totalDuration ? Math.round(lastCall.totalDuration) : 0,
+        lastExtension,
+        location: profile.location || 'Unknown'
+      };
+    }).sort((a, b) => new Date(b.lastCallTime) - new Date(a.lastCallTime));
+  }
+
   // Export analytics data
   exportData(format = 'json') {
     if (format === 'csv') {

@@ -988,6 +988,19 @@ app.get('/analytics/export/:format', async (req, res) => {
   }
 });
 
+// Detailed analytics for GUI table
+app.get('/analytics/detailed', async (req, res) => {
+  try {
+    const detailedAnalytics = analytics.getDetailedAnalytics();
+    res.json({
+      callerDetails: detailedAnalytics,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Ad exemption management
 app.post('/api/ads/exempt', async (req, res) => {
   try {
@@ -1844,11 +1857,11 @@ app.post('/webhook/select-channel', async (req, res) => {
         // Play the first debate file with speed control support
         twiml.play(playbackUrl);
         
-        // Add simple navigation controls that actually work
+        // Use the same podcast endpoint for consistent controls
         const gather = twiml.gather({
           numDigits: 1,
           timeout: 30,
-          action: `/webhook/debate-controls?currentIndex=0&totalFiles=${fileList.length}&position=0&startTime=${Date.now()}`,
+          action: `/webhook/playback-control?channel=50&episodeIndex=0&position=0&startTime=${Date.now()}`,
           method: 'POST'
         });
         
@@ -4407,11 +4420,11 @@ app.all('/webhook/play-debate', async (req, res) => {
     // Play the MP3 file directly - sync.com MP3s should work well with SignalWire
     twiml.play(selectedDebate.url);
     
-    // Add playback controls after the audio
+    // Add playback controls after the audio - use main podcast endpoint for unified controls
     const gather = twiml.gather({
       numDigits: 1,
       timeout: 10,
-      action: '/webhook/debate-controls',
+      action: `/webhook/playback-control?channel=50&episodeIndex=${selectedIndex}&position=0&startTime=${Date.now()}`,
       method: 'POST'
     });
     
