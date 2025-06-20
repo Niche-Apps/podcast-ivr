@@ -3564,14 +3564,38 @@ app.post('/webhook/playback-control', async (req, res) => {
         // Get current episode for speed-adjusted playback
         const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
         if (podcast) {
-          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
-          const episode = episodes[episodeIndex];
-          if (episode) {
-            // Update position and restart with new speed
-            callerSessions.updatePosition(callerId, channel, episode.audioUrl, actualPosition, episode.title);
-            twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSpeed} times normal.`);
-            twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
-            break;
+          // Special handling for debates (channel 50)
+          if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+            try {
+              const fs = require('fs');
+              const path = require('path');
+              const debatesPath = path.join(__dirname, 'public', 'debates');
+              const files = fs.readdirSync(debatesPath);
+              const mp3Files = files.filter(file => file.toLowerCase().endsWith('.mp3')).sort();
+              
+              if (mp3Files[episodeIndex]) {
+                const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+                const audioUrl = `${railwayBaseUrl}${mp3Files[episodeIndex]}`;
+                const title = mp3Files[episodeIndex].replace('.mp3', '').replace(/[-_]/g, ' ');
+                
+                callerSessions.updatePosition(callerId, channel, audioUrl, actualPosition, title);
+                twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSpeed} times normal.`);
+                twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
+                break;
+              }
+            } catch (error) {
+              console.error(`❌ Error reading debates folder for speed control: ${error.message}`);
+            }
+          } else {
+            const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+            const episode = episodes[episodeIndex];
+            if (episode) {
+              // Update position and restart with new speed
+              callerSessions.updatePosition(callerId, channel, episode.audioUrl, actualPosition, episode.title);
+              twiml.say(VOICE_CONFIG, `Playback speed decreased to ${newSpeed} times normal.`);
+              twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
+              break;
+            }
           }
         }
         
@@ -3595,14 +3619,38 @@ app.post('/webhook/playback-control', async (req, res) => {
         // Get current episode for speed-adjusted playback
         const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
         if (podcast) {
-          const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
-          const episode = episodes[episodeIndex];
-          if (episode) {
-            // Update position and restart with new speed
-            callerSessions.updatePosition(callerId, channel, episode.audioUrl, actualPosition, episode.title);
-            twiml.say(VOICE_CONFIG, `Playback speed increased to ${newSpeed} times normal.`);
-            twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
-            break;
+          // Special handling for debates (channel 50)
+          if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+            try {
+              const fs = require('fs');
+              const path = require('path');
+              const debatesPath = path.join(__dirname, 'public', 'debates');
+              const files = fs.readdirSync(debatesPath);
+              const mp3Files = files.filter(file => file.toLowerCase().endsWith('.mp3')).sort();
+              
+              if (mp3Files[episodeIndex]) {
+                const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+                const audioUrl = `${railwayBaseUrl}${mp3Files[episodeIndex]}`;
+                const title = mp3Files[episodeIndex].replace('.mp3', '').replace(/[-_]/g, ' ');
+                
+                callerSessions.updatePosition(callerId, channel, audioUrl, actualPosition, title);
+                twiml.say(VOICE_CONFIG, `Playback speed increased to ${newSpeed} times normal.`);
+                twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
+                break;
+              }
+            } catch (error) {
+              console.error(`❌ Error reading debates folder for speed control: ${error.message}`);
+            }
+          } else {
+            const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+            const episode = episodes[episodeIndex];
+            if (episode) {
+              // Update position and restart with new speed
+              callerSessions.updatePosition(callerId, channel, episode.audioUrl, actualPosition, episode.title);
+              twiml.say(VOICE_CONFIG, `Playback speed increased to ${newSpeed} times normal.`);
+              twiml.redirect(`/webhook/play-episode-with-speed?channel=${channel}&episodeIndex=${episodeIndex}&position=${actualPosition}&speed=${newSpeed}`);
+              break;
+            }
           }
         }
         
@@ -3694,7 +3742,7 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
   
   const twiml = new VoiceResponse();
   
-  const podcast = ALL_PODCASTS[channel];
+  const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
   if (!podcast) {
     twiml.say(VOICE_CONFIG, 'Invalid channel.');
     twiml.redirect('/webhook/ivr-main');
@@ -3702,7 +3750,46 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
   }
   
   try {
-    const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    // Special handling for debates (channel 50)
+    let episodes = [];
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        let fileList = [];
+        
+        try {
+          const debatesPath = path.join(__dirname, 'public', 'debates');
+          const files = fs.readdirSync(debatesPath);
+          const mp3Files = files
+            .filter(file => file.toLowerCase().endsWith('.mp3'))
+            .sort();
+          
+          if (mp3Files.length > 0) {
+            fileList = mp3Files;
+          } else {
+            fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+          }
+        } catch (fsError) {
+          console.error(`❌ Error reading debates folder: ${fsError.message}`);
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
+        
+        // Create episodes array for debates
+        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+        episodes = fileList.map((file, index) => ({
+          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+          audioUrl: `${railwayBaseUrl}${file}`,
+          description: `Debate audio file: ${file}`,
+          episodeIndex: index
+        }));
+      } catch (error) {
+        console.error(`❌ Error processing debates: ${error.message}`);
+        episodes = [];
+      }
+    } else {
+      episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    }
     
     if (!episodes || episodes.length === 0) {
       twiml.say(VOICE_CONFIG, `No episodes available for ${podcast.name}.`);
@@ -3907,7 +3994,7 @@ app.all('/webhook/episode-finished', async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
   
-  const podcast = ALL_PODCASTS[channel];
+  const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
   if (!podcast) {
     twiml.say(VOICE_CONFIG, 'Invalid channel.');
     twiml.redirect('/webhook/ivr-main');
@@ -3915,12 +4002,52 @@ app.all('/webhook/episode-finished', async (req, res) => {
   }
   
   try {
-    // Fetch episodes to get the next one, with dynamic loading if needed
-    let episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    // Special handling for debates (channel 50)
+    let episodes = [];
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        let fileList = [];
+        
+        try {
+          const debatesPath = path.join(__dirname, 'public', 'debates');
+          const files = fs.readdirSync(debatesPath);
+          const mp3Files = files
+            .filter(file => file.toLowerCase().endsWith('.mp3'))
+            .sort();
+          
+          if (mp3Files.length > 0) {
+            fileList = mp3Files;
+          } else {
+            fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+          }
+        } catch (fsError) {
+          console.error(`❌ Error reading debates folder: ${fsError.message}`);
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
+        
+        // Create episodes array for debates
+        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+        episodes = fileList.map((file, index) => ({
+          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+          audioUrl: `${railwayBaseUrl}${file}`,
+          description: `Debate audio file: ${file}`,
+          episodeIndex: index
+        }));
+      } catch (error) {
+        console.error(`❌ Error processing debates: ${error.message}`);
+        episodes = [];
+      }
+    } else {
+      // Fetch episodes to get the next one, with dynamic loading if needed
+      episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    }
+    
     const nextEpisodeIndex = episodeIndex + 1;
     
     // If we don't have enough episodes and we're near the end, fetch more
-    if (!episodes[nextEpisodeIndex] && nextEpisodeIndex >= 8) {
+    if (!episodes[nextEpisodeIndex] && nextEpisodeIndex >= 8 && channel !== '50') {
       console.log(`🔄 Need more episodes for index ${nextEpisodeIndex}, fetching more...`);
       episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 20, channel); // Fetch 20 total
     }
