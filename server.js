@@ -1854,6 +1854,9 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         twiml.say(VOICE_CONFIG, `Welcome to Debates. Playing: ${firstEpisode.title}. Use 1 and 3 for episode navigation, 4 and 6 for seek, 2 and 5 for speed control.`);
         
+        // Update session to track the current episode
+        callerSessions.updatePosition(callerId, '50', firstEpisode.audioUrl, 0, firstEpisode.title);
+        
         // Play the first debate file with speed control support
         twiml.play(playbackUrl);
         
