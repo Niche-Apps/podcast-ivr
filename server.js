@@ -3916,7 +3916,46 @@ app.all('/webhook/play-episode-with-speed', async (req, res) => {
   }
   
   try {
-    const episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    // Special handling for debates (channel 50)
+    let episodes = [];
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        let fileList = [];
+        
+        try {
+          const debatesPath = path.join(__dirname, 'public', 'debates');
+          const files = fs.readdirSync(debatesPath);
+          const mp3Files = files
+            .filter(file => file.toLowerCase().endsWith('.mp3'))
+            .sort();
+          
+          if (mp3Files.length > 0) {
+            fileList = mp3Files;
+          } else {
+            fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+          }
+        } catch (fsError) {
+          console.error(`❌ Error reading debates folder: ${fsError.message}`);
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
+        
+        // Create episodes array for debates
+        const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+        episodes = fileList.map((file, index) => ({
+          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+          audioUrl: `${railwayBaseUrl}${file}`,
+          description: `Debate audio file: ${file}`,
+          episodeIndex: index
+        }));
+      } catch (error) {
+        console.error(`❌ Error processing debates: ${error.message}`);
+        episodes = [];
+      }
+    } else {
+      episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    }
     
     if (!episodes || episodes.length === 0) {
       twiml.say(VOICE_CONFIG, `No episodes available for ${podcast.name}.`);
