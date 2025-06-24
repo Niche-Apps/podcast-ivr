@@ -1867,7 +1867,7 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         // Play the first debate file with speed control support - INSIDE gather for controls to work
         gather.play(playbackUrl);
-        gather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
+        gather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind 5 minutes, 6 to fast forward 5 minutes, 2 to slow down, 5 to speed up, or star for main menu.');
         
         twiml.say(VOICE_CONFIG, 'Returning to main menu.');
         twiml.redirect('/webhook/ivr-main');
@@ -3530,11 +3530,13 @@ app.post('/webhook/playback-control', async (req, res) => {
       twiml.redirect(`/webhook/episode-finished?channel=${channel}&episodeIndex=${episodeIndex}`);
       break;
       
-    case '4': // Rewind 30 seconds
+    case '4': // Rewind (30s for regular channels, 5min for debates)
       try {
-        const backPosition = Math.max(0, actualPosition - 30);
-        console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
-        twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
+        const seekAmount = channel === '50' ? 300 : 30; // 5 minutes for debates, 30 seconds for others
+        const backPosition = Math.max(0, actualPosition - seekAmount);
+        const seekText = channel === '50' ? '5 minutes' : '30 seconds';
+        console.log(`⏪ Rewind ${seekText}: ${actualPosition}s -> ${backPosition}s`);
+        twiml.say(VOICE_CONFIG, `Rewinding ${seekText}.`);
         twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${backPosition}`);
       } catch (error) {
         console.error(`❌ Rewind error:`, error.message);
@@ -3543,11 +3545,13 @@ app.post('/webhook/playback-control', async (req, res) => {
       }
       break;
       
-    case '6': // Fast forward 30 seconds
+    case '6': // Fast forward (30s for regular channels, 5min for debates)
       try {
-        const forwardPosition = actualPosition + 30;
-        console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
-        twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
+        const seekAmount = channel === '50' ? 300 : 30; // 5 minutes for debates, 30 seconds for others
+        const forwardPosition = actualPosition + seekAmount;
+        const seekText = channel === '50' ? '5 minutes' : '30 seconds';
+        console.log(`⏩ Fast forward ${seekText}: ${actualPosition}s -> ${forwardPosition}s`);
+        twiml.say(VOICE_CONFIG, `Fast forwarding ${seekText}.`);
         twiml.redirect(`/webhook/play-episode-at-position?channel=${channel}&episodeIndex=${episodeIndex}&position=${forwardPosition}`);
       } catch (error) {
         console.error(`❌ Fast forward error:`, error.message);
@@ -4758,11 +4762,11 @@ app.all('/webhook/debate-controls', async (req, res) => {
         twiml.redirect('/webhook/ivr-main');
         break;
         
-      case '4': // Rewind 30 seconds (seek backward)
-        const backPosition = Math.max(0, actualPosition - 30);
-        console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
+      case '4': // Rewind 5 minutes (seek backward)
+        const backPosition = Math.max(0, actualPosition - 300);
+        console.log(`⏪ Rewind 5min: ${actualPosition}s -> ${backPosition}s`);
         
-        twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
+        twiml.say(VOICE_CONFIG, 'Rewinding 5 minutes.');
         // For debates, we'll restart the current file since seeking isn't easily supported
         const currentFile = fileList[currentIndex];
         const currentFileUrl = `${railwayBaseUrl}${currentFile}`;
@@ -4779,11 +4783,11 @@ app.all('/webhook/debate-controls', async (req, res) => {
         twiml.redirect('/webhook/ivr-main');
         break;
         
-      case '6': // Fast forward 30 seconds (seek forward)
-        const forwardPosition = actualPosition + 30;
-        console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
+      case '6': // Fast forward 5 minutes (seek forward)
+        const forwardPosition = actualPosition + 300;
+        console.log(`⏩ Fast forward 5min: ${actualPosition}s -> ${forwardPosition}s`);
         
-        twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
+        twiml.say(VOICE_CONFIG, 'Fast forwarding 5 minutes.');
         // For debates, we'll continue with current file
         const currentFileForward = fileList[currentIndex];
         const currentFileUrlForward = `${railwayBaseUrl}${currentFileForward}`;
@@ -5148,9 +5152,9 @@ app.all('/webhook/debate-playback-control', async (req, res) => {
         twiml.redirect('/webhook/ivr-main');
         break;
         
-      case '4': // Rewind 30 seconds
-        const backPosition = Math.max(0, actualPosition - 30);
-        console.log(`⏪ Rewind 30s: ${actualPosition}s -> ${backPosition}s`);
+      case '4': // Rewind 5 minutes
+        const backPosition = Math.max(0, actualPosition - 300);
+        console.log(`⏪ Rewind 5min: ${actualPosition}s -> ${backPosition}s`);
         
         const currentEpisodeRewind = episodes[episodeIndex];
         
@@ -5160,7 +5164,7 @@ app.all('/webhook/debate-playback-control', async (req, res) => {
           `https://${req.get('host')}/cached_episodes/${path.basename(rewindCachedPath)}` : 
           currentEpisodeRewind.audioUrl;
         
-        twiml.say(VOICE_CONFIG, 'Rewinding 30 seconds.');
+        twiml.say(VOICE_CONFIG, 'Rewinding 5 minutes.');
         twiml.play(rewindPlaybackUrl);
         
         const rewindGather = twiml.gather({
@@ -5174,9 +5178,9 @@ app.all('/webhook/debate-playback-control', async (req, res) => {
         twiml.redirect('/webhook/ivr-main');
         break;
         
-      case '6': // Fast forward 30 seconds
-        const forwardPosition = actualPosition + 30;
-        console.log(`⏩ Fast forward 30s: ${actualPosition}s -> ${forwardPosition}s`);
+      case '6': // Fast forward 5 minutes
+        const forwardPosition = actualPosition + 300;
+        console.log(`⏩ Fast forward 5min: ${actualPosition}s -> ${forwardPosition}s`);
         
         const currentEpisodeForward = episodes[episodeIndex];
         
@@ -5186,7 +5190,7 @@ app.all('/webhook/debate-playback-control', async (req, res) => {
           `https://${req.get('host')}/cached_episodes/${path.basename(forwardCachedPath)}` : 
           currentEpisodeForward.audioUrl;
         
-        twiml.say(VOICE_CONFIG, 'Fast forwarding 30 seconds.');
+        twiml.say(VOICE_CONFIG, 'Fast forwarding 5 minutes.');
         twiml.play(forwardPlaybackUrl);
         
         const ffGather = twiml.gather({
