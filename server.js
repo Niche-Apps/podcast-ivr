@@ -1857,9 +1857,6 @@ app.post('/webhook/select-channel', async (req, res) => {
         // Update session to track the current episode
         callerSessions.updatePosition(callerId, '50', firstEpisode.audioUrl, 0, firstEpisode.title);
         
-        // Play the first debate file with speed control support
-        twiml.play(playbackUrl);
-        
         // Use the same podcast endpoint for consistent controls
         const gather = twiml.gather({
           numDigits: 1,
@@ -1868,6 +1865,8 @@ app.post('/webhook/select-channel', async (req, res) => {
           method: 'POST'
         });
         
+        // Play the first debate file with speed control support - INSIDE gather for controls to work
+        gather.play(playbackUrl);
         gather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind, 6 to fast forward, 2 to slow down, 5 to speed up, or star for main menu.');
         
         twiml.say(VOICE_CONFIG, 'Returning to main menu.');
