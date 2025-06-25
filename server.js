@@ -1815,12 +1815,21 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         // Create episodes array with local file URLs for caching
         const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
-        const episodes = fileList.map((file, index) => ({
-          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
-          audioUrl: `${railwayBaseUrl}${file}`,
-          description: `Debate audio file: ${file}`,
-          episodeIndex: index
-        }));
+        const episodes = fileList.map((file, index) => {
+          const audioUrl = `${railwayBaseUrl}${file}`;
+          // Check if file is already cached
+          const isCached = episodeCache.isCached('debates', audioUrl);
+          const cachedPath = isCached ? episodeCache.getCachedEpisodePath('debates', audioUrl) : null;
+          
+          return {
+            title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+            audioUrl: audioUrl,
+            description: `Debate audio file: ${file}`,
+            episodeIndex: index,
+            isCached: isCached,
+            cachedPath: cachedPath
+          };
+        });
         
         console.log(`📂 Created ${episodes.length} debate episodes for caching`);
         
@@ -1830,23 +1839,28 @@ app.post('/webhook/select-channel', async (req, res) => {
         
         try {
           // Check if already cached
-          if (episodeCache.isCached('debates', firstEpisode.audioUrl)) {
-            cachedPath = episodeCache.getCachedEpisodePath('debates', firstEpisode.audioUrl);
+          if (firstEpisode.isCached && firstEpisode.cachedPath) {
+            cachedPath = firstEpisode.cachedPath;
             console.log(`✅ First debate already cached: ${cachedPath}`);
           } else {
             // Cache the first episode
             console.log(`📥 Caching first debate for speed controls: ${firstEpisode.title}`);
             cachedPath = await episodeCache.cacheEpisode('debates', firstEpisode.audioUrl, firstEpisode.title, 'temporary');
+            // Update the episode object with cached info
+            firstEpisode.isCached = true;
+            firstEpisode.cachedPath = cachedPath;
             console.log(`✅ First debate cached: ${cachedPath}`);
           }
         } catch (cacheError) {
           console.warn(`⚠️ Caching failed, using direct URL: ${cacheError.message}`);
           cachedPath = null;
+          firstEpisode.isCached = false;
+          firstEpisode.cachedPath = null;
         }
         
         // Use cached path if available, otherwise fallback to direct URL
-        const playbackUrl = cachedPath ? 
-          `https://${req.get('host')}/cached_episodes/${path.basename(cachedPath)}` : 
+        const playbackUrl = (firstEpisode.isCached && firstEpisode.cachedPath) ? 
+          `https://${req.get('host')}/cached_episodes/${path.basename(firstEpisode.cachedPath)}` : 
           firstEpisode.audioUrl;
         
         console.log(`🎵 Auto-playing first debate: ${firstEpisode.title}`);
@@ -1857,20 +1871,9 @@ app.post('/webhook/select-channel', async (req, res) => {
         // Update session to track the current episode
         callerSessions.updatePosition(callerId, '50', firstEpisode.audioUrl, 0, firstEpisode.title);
         
-        // Use the same podcast endpoint for consistent controls
-        const gather = twiml.gather({
-          numDigits: 1,
-          timeout: 30,
-          action: `/webhook/playback-control?channel=50&episodeIndex=0&position=0&startTime=${Date.now()}`,
-          method: 'POST'
-        });
-        
-        // Play the first debate file with speed control support - INSIDE gather for controls to work
-        gather.play(playbackUrl);
-        gather.say(VOICE_CONFIG, 'Press 1 for previous, 3 for next, 4 to rewind 5 minutes, 6 to fast forward 5 minutes, 2 to slow down, 5 to speed up, or star for main menu.');
-        
-        twiml.say(VOICE_CONFIG, 'Returning to main menu.');
-        twiml.redirect('/webhook/ivr-main');
+        // Use the play-episode endpoint for consistent playback controls and full episode playback  
+        console.log(`🎵 Redirecting to standard play-episode for channel 50`);
+        twiml.redirect(`/webhook/play-episode?channel=50&episodeIndex=0`);
         res.type('text/xml');
         return res.send(twiml.toString());
         
@@ -3040,7 +3043,7 @@ app.all('/webhook/play-episode', async (req, res) => {
   
   const twiml = new VoiceResponse();
   
-  const podcast = ALL_PODCASTS[channel];
+  const podcast = ALL_PODCASTS[channel] || EXTENSION_PODCASTS[channel];
   if (!podcast) {
     console.log(`ERROR: No podcast for channel ${channel}`);
     twiml.say(VOICE_CONFIG, 'Invalid channel.');
@@ -3066,8 +3069,54 @@ app.all('/webhook/play-episode', async (req, res) => {
   }
   
   try {
-    console.log(`🔍 Fetching episodes from: ${podcast.rssUrl}`);
-    let episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    let episodes;
+    
+    // Special handling for debates (channel 50)
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+      console.log(`🎬 Loading debates from local files`);
+      const fs = require('fs');
+      const path = require('path');
+      let fileList = [];
+      
+      try {
+        const debatesPath = path.join(__dirname, 'public', 'debates');
+        const files = fs.readdirSync(debatesPath);
+        const mp3Files = files
+          .filter(file => file.toLowerCase().endsWith('.mp3'))
+          .sort();
+        
+        if (mp3Files.length > 0) {
+          fileList = mp3Files;
+        } else {
+          fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+        }
+      } catch (fsError) {
+        console.error(`❌ Error reading debates folder: ${fsError.message}`);
+        fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
+      }
+      
+      // Create episodes array for debates with caching support
+      const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
+      episodes = fileList.map((file, index) => {
+        const audioUrl = `${railwayBaseUrl}${file}`;
+        // Check if file is already cached
+        const episodeCache = new EpisodeCache();
+        const isCached = episodeCache.isCached('debates', audioUrl);
+        const cachedPath = isCached ? episodeCache.getCachedEpisodePath('debates', audioUrl) : null;
+        
+        return {
+          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+          audioUrl: audioUrl,
+          description: `Debate audio file: ${file}`,
+          episodeIndex: index,
+          isCached: isCached,
+          cachedPath: cachedPath
+        };
+      });
+    } else {
+      console.log(`🔍 Fetching episodes from: ${podcast.rssUrl}`);
+      episodes = await fetchPodcastEpisodes(podcast.rssUrl, 0, 10, channel);
+    }
     
     // If requesting an episode beyond our initial fetch, get more episodes
     if (!episodes[episodeIndex] && episodeIndex >= 8) {
@@ -3098,8 +3147,8 @@ app.all('/webhook/play-episode', async (req, res) => {
     console.log(`📻 Episode found: "${episode.title}" (${episode.fileSizeMB || 'unknown'}MB)`);
     console.log(`🔗 Raw audio URL: ${episode.audioUrl.substring(0, 100)}...`);
     
-    // Check for very large files (only apply restriction for Twilio)
-    if (voiceProvider === 'twilio' && episode.fileSizeMB && episode.fileSizeMB > 150) {
+    // Check for very large files (only apply restriction for Twilio) - skip for debates
+    if (voiceProvider === 'twilio' && channel !== '50' && episode.fileSizeMB && episode.fileSizeMB > 150) {
       console.log(`⚠️ Large file detected (${episode.fileSizeMB}MB), may cause Twilio playback issues`);
       twiml.say(VOICE_CONFIG, `This episode "${episode.title.substring(0, 60)}" is very long at ${Math.round((episode.fileSize || 0) / 1024 / 1024)} megabytes. The phone system may have difficulty playing such large files. Please try NPR option 2 for reliable streaming, or try a different podcast.`);
       twiml.say(VOICE_CONFIG, 'Returning to main menu.');
@@ -3107,50 +3156,73 @@ app.all('/webhook/play-episode', async (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
     
-    // Clean the URL with additional safety checks
+    // Clean the URL with additional safety checks (but don't clean for debates)
     let finalAudioUrl;
-    try {
-      const cleanedUrl = cleanAudioUrl(episode.audioUrl);
-      console.log(`🧹 Cleaned URL: ${cleanedUrl.substring(0, 100)}...`);
-      
-      // Basic URL validation
-      if (!cleanedUrl || !cleanedUrl.startsWith('http')) {
-        throw new Error('Invalid cleaned URL');
-      }
-      
-      finalAudioUrl = cleanedUrl;
-      console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
-    } catch (urlError) {
-      console.error(`⚠️ URL cleaning failed: ${urlError.message}, using original URL`);
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+      // For debates, use the URL as-is
       finalAudioUrl = episode.audioUrl;
+      console.log(`🎬 Using debate URL as-is: ${finalAudioUrl.substring(0, 100)}...`);
+    } else {
+      try {
+        const cleanedUrl = cleanAudioUrl(episode.audioUrl);
+        console.log(`🧹 Cleaned URL: ${cleanedUrl.substring(0, 100)}...`);
+        
+        // Basic URL validation
+        if (!cleanedUrl || !cleanedUrl.startsWith('http')) {
+          throw new Error('Invalid cleaned URL');
+        }
+        
+        finalAudioUrl = cleanedUrl;
+        console.log(`✅ Using audio URL: ${finalAudioUrl.substring(0, 100)}...`);
+      } catch (urlError) {
+        console.error(`⚠️ URL cleaning failed: ${urlError.message}, using original URL`);
+        finalAudioUrl = episode.audioUrl;
+      }
     }
     
     // Initialize episode cache for intelligent caching strategy
     const episodeCache = new EpisodeCache();
     let cachedPath = episode.cachedPath;
     
-    // Check if already cached
-    if (episodeCache.isCached(channel, finalAudioUrl)) {
-      cachedPath = episodeCache.getCachedEpisodePath(channel, finalAudioUrl);
-      console.log(`✅ Episode already cached: ${path.basename(cachedPath)}`);
-    } else {
-      // For the latest episode (index 0), cache immediately for best experience
-      if (episodeIndex === 0) {
+    // For channel 50 (debates), ensure caching for seeking/speed support
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+      if (episode.isCached && episode.cachedPath) {
+        cachedPath = episode.cachedPath;
+        console.log(`✅ Debate episode already cached: ${path.basename(cachedPath)}`);
+      } else {
         try {
-          console.log(`📥 Caching latest episode for immediate playback: ${episode.title.substring(0, 50)}`);
-          cachedPath = await episodeCache.cacheEpisode(channel, finalAudioUrl, episode.title, 'latest');
-          console.log(`✅ Latest episode cached successfully: ${path.basename(cachedPath)}`);
+          console.log(`📥 Caching debate episode for seeking/speed support: ${episode.title.substring(0, 50)}`);
+          cachedPath = await episodeCache.cacheEpisode('debates', finalAudioUrl, episode.title, 'temporary');
+          console.log(`✅ Debate episode cached successfully: ${path.basename(cachedPath)}`);
         } catch (cacheError) {
-          console.warn(`⚠️ Latest episode caching failed, using stream: ${cacheError.message}`);
+          console.warn(`⚠️ Debate episode caching failed, using direct URL: ${cacheError.message}`);
           cachedPath = null;
         }
+      }
+    } else {
+      // Check if already cached
+      if (episodeCache.isCached(channel, finalAudioUrl)) {
+        cachedPath = episodeCache.getCachedEpisodePath(channel, finalAudioUrl);
+        console.log(`✅ Episode already cached: ${path.basename(cachedPath)}`);
       } else {
-        // For older episodes, start background caching and play immediately
-        const backgroundStarted = episodeCache.startBackgroundCaching(channel, finalAudioUrl, episode.title);
-        if (backgroundStarted) {
-          console.log(`📥 Started background caching for older episode: ${episode.title.substring(0, 50)}`);
+        // For the latest episode (index 0), cache immediately for best experience
+        if (episodeIndex === 0) {
+          try {
+            console.log(`📥 Caching latest episode for immediate playback: ${episode.title.substring(0, 50)}`);
+            cachedPath = await episodeCache.cacheEpisode(channel, finalAudioUrl, episode.title, 'latest');
+            console.log(`✅ Latest episode cached successfully: ${path.basename(cachedPath)}`);
+          } catch (cacheError) {
+            console.warn(`⚠️ Latest episode caching failed, using stream: ${cacheError.message}`);
+            cachedPath = null;
+          }
+        } else {
+          // For older episodes, start background caching and play immediately
+          const backgroundStarted = episodeCache.startBackgroundCaching(channel, finalAudioUrl, episode.title);
+          if (backgroundStarted) {
+            console.log(`📥 Started background caching for older episode: ${episode.title.substring(0, 50)}`);
+          }
+          cachedPath = null; // Play from stream initially
         }
-        cachedPath = null; // Play from stream initially
       }
     }
     
@@ -3183,17 +3255,24 @@ app.all('/webhook/play-episode', async (req, res) => {
       playbackUrl = `https://${req.get('host')}/cached_episodes/${path.basename(cachedPath)}`;
       console.log(`📦 Playing cached episode: ${path.basename(cachedPath)}`);
     } else {
-      const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
-      playbackUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
-      console.log(`🚀 Playing episode from: ${finalAudioUrl.split('/')[2]}`);
+      // For debates (channel 50), use the Railway URL directly; for others, use proxy
+      if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES') {
+        playbackUrl = finalAudioUrl;
+        console.log(`🎬 Playing debate directly from Railway: ${finalAudioUrl.substring(0, 80)}...`);
+      } else {
+        const encodedUrl = Buffer.from(finalAudioUrl).toString('base64');
+        playbackUrl = `https://${req.get('host')}/proxy-audio/${encodedUrl}`;
+        console.log(`🚀 Playing episode from: ${finalAudioUrl.split('/')[2]}`);
+      }
     }
     
     // Add playback speed if not 1x
     const playOptions = playbackSpeed !== 1 ? { loop: 1, rate: playbackSpeed } : { loop: 1 };
     gather.play(playOptions, playbackUrl);
     
-    // Standardized controls prompt
-    gather.say(VOICE_CONFIG, 'Press 1 for previous episode, 3 for next episode, 4 to rewind 30 seconds, 6 to fast forward 30 seconds, 2 to slow down, 5 to speed up, star to resume your last episode, or stay on the line to continue listening.');
+    // Standardized controls prompt - adjust for channel 50 (debates)
+    const seekTime = channel === '50' ? '5 minutes' : '30 seconds';
+    gather.say(VOICE_CONFIG, `Press 1 for previous episode, 3 for next episode, 4 to rewind ${seekTime}, 6 to fast forward ${seekTime}, 2 to slow down, 5 to speed up, star to resume your last episode, or stay on the line to continue listening.`);
     
     // Continue with ad break tracking
     twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=0&startTime=${Date.now()}`);
@@ -3470,14 +3549,23 @@ app.post('/webhook/playback-control', async (req, res) => {
         fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
       }
       
-      // Create episodes array for debates
+      // Create episodes array for debates with caching support
       const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
-      const debateEpisodes = fileList.map((file, index) => ({
-        title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
-        audioUrl: `${railwayBaseUrl}${file}`,
-        description: `Debate audio file: ${file}`,
-        episodeIndex: index
-      }));
+      const debateEpisodes = fileList.map((file, index) => {
+        const audioUrl = `${railwayBaseUrl}${file}`;
+        // Check if file is already cached
+        const isCached = episodeCache.isCached('debates', audioUrl);
+        const cachedPath = isCached ? episodeCache.getCachedEpisodePath('debates', audioUrl) : null;
+        
+        return {
+          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+          audioUrl: audioUrl,
+          description: `Debate audio file: ${file}`,
+          episodeIndex: index,
+          isCached: isCached,
+          cachedPath: cachedPath
+        };
+      });
       
       if (debateEpisodes[episodeIndex]) {
         currentEpisode = debateEpisodes[episodeIndex];
@@ -3781,14 +3869,23 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
           fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
         }
         
-        // Create episodes array for debates
+        // Create episodes array for debates with caching support
         const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
-        episodes = fileList.map((file, index) => ({
-          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
-          audioUrl: `${railwayBaseUrl}${file}`,
-          description: `Debate audio file: ${file}`,
-          episodeIndex: index
-        }));
+        episodes = fileList.map((file, index) => {
+          const audioUrl = `${railwayBaseUrl}${file}`;
+          // Check if file is already cached
+          const isCached = episodeCache.isCached('debates', audioUrl);
+          const cachedPath = isCached ? episodeCache.getCachedEpisodePath('debates', audioUrl) : null;
+          
+          return {
+            title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+            audioUrl: audioUrl,
+            description: `Debate audio file: ${file}`,
+            episodeIndex: index,
+            isCached: isCached,
+            cachedPath: cachedPath
+          };
+        });
       } catch (error) {
         console.error(`❌ Error processing debates: ${error.message}`);
         episodes = [];
@@ -3808,6 +3905,21 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
       // If episode not found, go to latest episode
       twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0`);
       return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // For channel 50 (debates), ensure the episode is cached for proper seeking support
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES' && !episode.isCached) {
+      try {
+        console.log(`📥 Caching debate episode for seeking support: ${episode.title}`);
+        const cachedPath = await episodeCache.cacheEpisode('debates', episode.audioUrl, episode.title, 'temporary');
+        episode.isCached = true;
+        episode.cachedPath = cachedPath;
+        console.log(`✅ Debate episode cached: ${cachedPath}`);
+      } catch (cacheError) {
+        console.warn(`⚠️ Caching failed for debate episode: ${cacheError.message}`);
+        episode.isCached = false;
+        episode.cachedPath = null;
+      }
     }
     
     // Determine audio source: use cached file if available, otherwise remote URL
@@ -3876,7 +3988,7 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
     // Set up gather with position tracking
     const gather = twiml.gather({
       numDigits: 1,
-      action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${position}`,
+      action: `/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${position}&startTime=${Date.now()}`,
       method: 'POST',
       timeout: 30
     });
@@ -3886,7 +3998,7 @@ app.all('/webhook/play-episode-at-position', async (req, res) => {
     
     // Continue with updated position after timeout (simulate playback progress)
     const nextPosition = position + 30; // Add 30 seconds for timeout duration
-    twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${nextPosition}`);
+    twiml.redirect(`/webhook/playback-control?channel=${channel}&episodeIndex=${episodeIndex}&position=${nextPosition}&startTime=${Date.now()}`);
     
   } catch (error) {
     console.error(`❌ Error playing episode at position:`, error.message);
@@ -3944,14 +4056,23 @@ app.all('/webhook/play-episode-with-speed', async (req, res) => {
           fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
         }
         
-        // Create episodes array for debates
+        // Create episodes array for debates with caching support
         const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
-        episodes = fileList.map((file, index) => ({
-          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
-          audioUrl: `${railwayBaseUrl}${file}`,
-          description: `Debate audio file: ${file}`,
-          episodeIndex: index
-        }));
+        episodes = fileList.map((file, index) => {
+          const audioUrl = `${railwayBaseUrl}${file}`;
+          // Check if file is already cached
+          const isCached = episodeCache.isCached('debates', audioUrl);
+          const cachedPath = isCached ? episodeCache.getCachedEpisodePath('debates', audioUrl) : null;
+          
+          return {
+            title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+            audioUrl: audioUrl,
+            description: `Debate audio file: ${file}`,
+            episodeIndex: index,
+            isCached: isCached,
+            cachedPath: cachedPath
+          };
+        });
       } catch (error) {
         console.error(`❌ Error processing debates: ${error.message}`);
         episodes = [];
@@ -3970,6 +4091,21 @@ app.all('/webhook/play-episode-with-speed', async (req, res) => {
     if (!episode) {
       twiml.redirect(`/webhook/play-episode?channel=${channel}&episodeIndex=0`);
       return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // For channel 50 (debates), ensure the episode is cached for proper speed and seeking support
+    if (channel === '50' && podcast.rssUrl === 'YOUTUBE_DEBATES' && !episode.isCached) {
+      try {
+        console.log(`📥 Caching debate episode for speed/seeking support: ${episode.title}`);
+        const cachedPath = await episodeCache.cacheEpisode('debates', episode.audioUrl, episode.title, 'temporary');
+        episode.isCached = true;
+        episode.cachedPath = cachedPath;
+        console.log(`✅ Debate episode cached: ${cachedPath}`);
+      } catch (cacheError) {
+        console.warn(`⚠️ Caching failed for debate episode: ${cacheError.message}`);
+        episode.isCached = false;
+        episode.cachedPath = null;
+      }
     }
     
     // Determine audio source: use cached file if available, otherwise remote URL
@@ -4072,14 +4208,23 @@ app.all('/webhook/episode-finished', async (req, res) => {
           fileList = ['debate1.mp3', 'debate2.mp3', 'debate3.mp3'];
         }
         
-        // Create episodes array for debates
+        // Create episodes array for debates with caching support
         const railwayBaseUrl = `${req.protocol}://${req.get('host')}/debates/`;
-        episodes = fileList.map((file, index) => ({
-          title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
-          audioUrl: `${railwayBaseUrl}${file}`,
-          description: `Debate audio file: ${file}`,
-          episodeIndex: index
-        }));
+        episodes = fileList.map((file, index) => {
+          const audioUrl = `${railwayBaseUrl}${file}`;
+          // Check if file is already cached
+          const isCached = episodeCache.isCached('debates', audioUrl);
+          const cachedPath = isCached ? episodeCache.getCachedEpisodePath('debates', audioUrl) : null;
+          
+          return {
+            title: file.replace('.mp3', '').replace(/[-_]/g, ' '),
+            audioUrl: audioUrl,
+            description: `Debate audio file: ${file}`,
+            episodeIndex: index,
+            isCached: isCached,
+            cachedPath: cachedPath
+          };
+        });
       } catch (error) {
         console.error(`❌ Error processing debates: ${error.message}`);
         episodes = [];
