@@ -4722,22 +4722,240 @@ app.get('/api/test-ads/:phoneNumber', async (req, res) => {
 // Test ad endpoints for TTS-generated ads
 app.get('/api/test-ad/:adId', (req, res) => {
   const { adId } = req.params;
-  
+
   const adMessages = {
     'preroll1': 'This episode is brought to you by Local Business. Your neighborhood partner for quality service and friendly support. Visit us today.',
     'preroll2': 'Tech Company presents this podcast. Innovation that works for you. Technology made simple.',
     'midroll1': 'Hungry? Restaurant Chain has fresh ingredients and great taste. Over 50 locations to serve you.',
     'midroll2': 'Protect what matters most with Insurance Company. Reliable coverage, competitive rates, local agents.'
   };
-  
+
   const message = adMessages[adId] || 'Thank you for listening to our sponsors.';
-  
+
   const twiml = new VoiceResponse();
   twiml.say(VOICE_CONFIG, message);
-  
+
   res.type('text/xml');
   res.send(twiml.toString());
 });
+
+// Storage Volume Management API
+// List files in storage directories
+app.get('/api/storage/list', async (req, res) => {
+  try {
+    const { path: dirPath = '' } = req.query;
+    const basePaths = [
+      { name: 'cached_episodes', path: path.join(__dirname, 'cached_episodes') },
+      { name: 'debates', path: path.join(__dirname, 'public', 'debates') },
+      { name: 'audio', path: path.join(__dirname, 'public', 'audio') }
+    ];
+
+    const storageInfo = [];
+
+    for (const baseDir of basePaths) {
+      const fullPath = path.join(baseDir.path, dirPath);
+
+      if (fs.existsSync(fullPath)) {
+        const stats = fs.statSync(fullPath);
+
+        if (stats.isDirectory()) {
+          const files = fs.readdirSync(fullPath).map(fileName => {
+            const filePath = path.join(fullPath, fileName);
+            const fileStats = fs.statSync(filePath);
+
+            return {
+              name: fileName,
+              path: path.join(baseDir.name, dirPath, fileName),
+              size: fileStats.size,
+              sizeFormatted: formatFileSize(fileStats.size),
+              isDirectory: fileStats.isDirectory(),
+              modified: fileStats.mtime,
+              created: fileStats.birthtime
+            };
+          });
+
+          storageInfo.push({
+            directory: baseDir.name,
+            path: dirPath,
+            files: files.sort((a, b) => {
+              if (a.isDirectory !== b.isDirectory) {
+                return a.isDirectory ? -1 : 1;
+              }
+              return a.name.localeCompare(b.name);
+            }),
+            totalSize: files.reduce((sum, file) => sum + file.size, 0),
+            totalSizeFormatted: formatFileSize(files.reduce((sum, file) => sum + file.size, 0))
+          });
+        }
+      }
+    }
+
+    // Also include cache statistics
+    const cacheStats = episodeCache.getCacheStats();
+
+    res.json({
+      success: true,
+      storage: storageInfo,
+      cacheStats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Storage list error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a file from storage
+app.delete('/api/storage/delete', async (req, res) => {
+  try {
+    const { filePath } = req.body;
+
+    if (!filePath) {
+      return res.status(400).json({ error: 'File path is required' });
+    }
+
+    // Security: Only allow deletion from specific directories
+    const allowedPaths = ['cached_episodes', 'debates', 'audio'];
+    const pathParts = filePath.split('/');
+    const baseDir = pathParts[0];
+
+    if (!allowedPaths.includes(baseDir)) {
+      return res.status(403).json({ error: 'Deletion not allowed from this directory' });
+    }
+
+    const fullPath = path.join(__dirname,
+      baseDir === 'cached_episodes' ? baseDir : path.join('public', baseDir),
+      ...pathParts.slice(1)
+    );
+
+    if (fs.existsSync(fullPath)) {
+      const stats = fs.statSync(fullPath);
+
+      if (stats.isFile()) {
+        fs.unlinkSync(fullPath);
+        console.log(`🗑️ Deleted file: ${filePath}`);
+
+        // If it's a cached episode, update metadata
+        if (baseDir === 'cached_episodes') {
+          const metadata = episodeCache.loadMetadata();
+          Object.keys(metadata.episodes).forEach(key => {
+            if (metadata.episodes[key].filename === path.basename(filePath)) {
+              delete metadata.episodes[key];
+            }
+          });
+          episodeCache.saveMetadata(metadata);
+        }
+
+        res.json({ success: true, message: `File deleted: ${filePath}` });
+      } else {
+        res.status(400).json({ error: 'Cannot delete directories' });
+      }
+    } else {
+      res.status(404).json({ error: 'File not found' });
+    }
+  } catch (error) {
+    console.error('File deletion error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Upload a file to storage
+const multer = require('multer');
+const upload = multer({
+  dest: '/tmp/',
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
+});
+
+app.post('/api/storage/upload', upload.single('file'), async (req, res) => {
+  try {
+    const { directory = 'debates' } = req.body;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Security: Only allow upload to specific directories
+    const allowedDirs = ['debates', 'audio'];
+    if (!allowedDirs.includes(directory)) {
+      fs.unlinkSync(file.path);
+      return res.status(403).json({ error: 'Upload not allowed to this directory' });
+    }
+
+    const targetDir = path.join(__dirname, 'public', directory);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const targetPath = path.join(targetDir, file.originalname);
+
+    // Move the uploaded file to target location
+    fs.renameSync(file.path, targetPath);
+
+    console.log(`📤 File uploaded: ${directory}/${file.originalname}`);
+
+    res.json({
+      success: true,
+      message: 'File uploaded successfully',
+      file: {
+        name: file.originalname,
+        size: file.size,
+        path: `${directory}/${file.originalname}`
+      }
+    });
+  } catch (error) {
+    console.error('File upload error:', error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear cache for specific channel or all
+app.post('/api/storage/clear-cache', async (req, res) => {
+  try {
+    const { channelId } = req.body;
+
+    if (channelId) {
+      // Clear cache for specific channel
+      const metadata = episodeCache.loadMetadata();
+      let cleared = 0;
+
+      Object.keys(metadata.episodes).forEach(key => {
+        if (metadata.episodes[key].channelId === channelId) {
+          episodeCache.removeEpisode(key);
+          cleared++;
+        }
+      });
+
+      res.json({
+        success: true,
+        message: `Cleared ${cleared} cached episodes for channel ${channelId}`
+      });
+    } else {
+      // Clear all cache
+      episodeCache.cleanupExpiredEpisodes();
+      res.json({
+        success: true,
+        message: 'Expired episodes cleared',
+        stats: episodeCache.getCacheStats()
+      });
+    }
+  } catch (error) {
+    console.error('Cache clear error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper function to format file size
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
 // Handle YouTube debates playback
 app.all('/webhook/play-debate', async (req, res) => {
