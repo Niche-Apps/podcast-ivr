@@ -2335,8 +2335,28 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
-// API endpoint to update an existing feed
-app.put('/api/feeds/update/:channel', async (req, res) => {
+// Test route to debug PUT requests
+app.all('/api/feeds/update/:channel', (req, res, next) => {
+  console.log(`🔍 Received ${req.method} request for /api/feeds/update/${req.params.channel}`);
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
+
+  if (req.method !== 'PUT') {
+    console.log(`⚠️ Wrong method: ${req.method}, expected PUT`);
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+  }
+  next();
+});
+
+// API endpoint to update an existing feed (support both PUT and POST for compatibility)
+app.put('/api/feeds/update/:channel', updateFeedHandler);
+app.post('/api/feeds/update/:channel', updateFeedHandler);
+
+async function updateFeedHandler(req, res) {
+  console.log(`✅ ${req.method} route handler reached for channel ${req.params.channel}`);
+
   try {
     const { channel } = req.params;
     const { name, rssUrl, description } = req.body;
@@ -2416,7 +2436,7 @@ app.put('/api/feeds/update/:channel', async (req, res) => {
     console.error(`❌ Error updating feed:`, error);
     res.status(500).json({ error: error.message });
   }
-});
+}
 
 // API endpoint to delete a feed
 app.delete('/api/feeds/delete/:channel', async (req, res) => {
