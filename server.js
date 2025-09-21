@@ -2341,18 +2341,34 @@ app.put('/api/feeds/update/:channel', async (req, res) => {
     const { channel } = req.params;
     const { name, rssUrl, description } = req.body;
 
+    console.log(`📝 Update request for channel ${channel}:`, { name, rssUrl, description });
+
     // Load current config
     const configPath = path.join(__dirname, 'podcast-feeds.json');
+
+    // Check if file exists
+    if (!fs.existsSync(configPath)) {
+      console.error('❌ podcast-feeds.json not found at:', configPath);
+      return res.status(500).json({ error: 'Configuration file not found' });
+    }
+
     const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
     // Check if feed exists in either feeds or extensions
     let feedLocation = null;
-    if (podcastConfig.feeds[channel]) {
+    if (podcastConfig.feeds && podcastConfig.feeds[channel]) {
       feedLocation = 'feeds';
-    } else if (podcastConfig.extensions[channel]) {
+    } else if (podcastConfig.extensions && podcastConfig.extensions[channel]) {
       feedLocation = 'extensions';
     } else {
-      return res.status(404).json({ error: 'Feed not found' });
+      console.log(`❌ Feed not found for channel ${channel}`);
+      console.log('Available feeds:', Object.keys(podcastConfig.feeds || {}));
+      console.log('Available extensions:', Object.keys(podcastConfig.extensions || {}));
+      return res.status(404).json({
+        error: `Feed not found for channel ${channel}`,
+        availableFeeds: Object.keys(podcastConfig.feeds || {}),
+        availableExtensions: Object.keys(podcastConfig.extensions || {})
+      });
     }
 
     // Update the feed
@@ -2376,6 +2392,8 @@ app.put('/api/feeds/update/:channel', async (req, res) => {
       EXTENSION_PODCASTS = podcastConfig.extensions;
     }
 
+    console.log(`✅ Successfully updated feed ${podcastConfig[feedLocation][channel].name} on channel ${channel}`);
+
     res.json({
       success: true,
       message: `Updated ${podcastConfig[feedLocation][channel].name} on channel ${channel}`,
@@ -2383,6 +2401,7 @@ app.put('/api/feeds/update/:channel', async (req, res) => {
     });
 
   } catch (error) {
+    console.error(`❌ Error updating feed:`, error);
     res.status(500).json({ error: error.message });
   }
 });
