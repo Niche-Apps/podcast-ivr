@@ -2354,27 +2354,36 @@ app.put('/api/feeds/update/:channel', async (req, res) => {
 
     const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
+    // Ensure the config has the required structure
+    if (!podcastConfig.feeds) podcastConfig.feeds = {};
+    if (!podcastConfig.extensions) podcastConfig.extensions = {};
+
     // Check if feed exists in either feeds or extensions
     let feedLocation = null;
+    let isNewFeed = false;
+
     if (podcastConfig.feeds && podcastConfig.feeds[channel]) {
       feedLocation = 'feeds';
+      console.log(`📝 Updating existing feed in 'feeds' for channel ${channel}`);
     } else if (podcastConfig.extensions && podcastConfig.extensions[channel]) {
       feedLocation = 'extensions';
+      console.log(`📝 Updating existing feed in 'extensions' for channel ${channel}`);
     } else {
-      console.log(`❌ Feed not found for channel ${channel}`);
-      console.log('Available feeds:', Object.keys(podcastConfig.feeds || {}));
-      console.log('Available extensions:', Object.keys(podcastConfig.extensions || {}));
-      return res.status(404).json({
-        error: `Feed not found for channel ${channel}`,
-        availableFeeds: Object.keys(podcastConfig.feeds || {}),
-        availableExtensions: Object.keys(podcastConfig.extensions || {})
-      });
+      // Create new feed in extensions if it doesn't exist
+      feedLocation = 'extensions';
+      isNewFeed = true;
+      podcastConfig.extensions[channel] = {
+        name: '',
+        rssUrl: '',
+        description: ''
+      };
+      console.log(`➕ Creating new feed in 'extensions' for channel ${channel}`);
     }
 
     // Update the feed
     if (name) podcastConfig[feedLocation][channel].name = name;
     if (rssUrl) podcastConfig[feedLocation][channel].rssUrl = rssUrl;
-    if (description) podcastConfig[feedLocation][channel].description = description;
+    if (description !== undefined) podcastConfig[feedLocation][channel].description = description;
 
     // Update metadata
     if (!podcastConfig.metadata) {
@@ -2392,12 +2401,15 @@ app.put('/api/feeds/update/:channel', async (req, res) => {
       EXTENSION_PODCASTS = podcastConfig.extensions;
     }
 
-    console.log(`✅ Successfully updated feed ${podcastConfig[feedLocation][channel].name} on channel ${channel}`);
+    const action = isNewFeed ? 'Created' : 'Updated';
+    console.log(`✅ Successfully ${action.toLowerCase()} feed ${podcastConfig[feedLocation][channel].name} on channel ${channel}`);
 
     res.json({
       success: true,
-      message: `Updated ${podcastConfig[feedLocation][channel].name} on channel ${channel}`,
-      feed: podcastConfig[feedLocation][channel]
+      message: `${action} ${podcastConfig[feedLocation][channel].name} on channel ${channel}`,
+      feed: podcastConfig[feedLocation][channel],
+      location: feedLocation,
+      isNew: isNewFeed
     });
 
   } catch (error) {
