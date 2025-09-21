@@ -538,12 +538,13 @@ try {
   
 } catch (error) {
   console.error('❌ Failed to load podcast-feeds.json:', error.message);
-  
+
   // Fallback to minimal configuration
   ALL_PODCASTS = {
     '0': { name: 'System Test', rssUrl: 'STATIC_TEST' },
     '1': { name: 'NPR News Now', rssUrl: 'https://feeds.npr.org/500005/podcast.xml' }
   };
+  EXTENSION_PODCASTS = {};
   console.log('⚠️ Using fallback podcast configuration');
 }
 
@@ -1540,20 +1541,6 @@ async function startServer() {
     // Note: Audio pipeline replaced with direct RSS streaming
     console.log('🎵 Using direct RSS feed streaming instead of local audio pipeline');
 
-    // 404 handler - must be last
-    app.use((req, res) => {
-      console.log(`⚠️ 404 - Unhandled route: ${req.method} ${req.originalUrl}`);
-      console.log('Path:', req.path);
-      console.log('Query:', req.query);
-      console.log('Body:', req.body);
-      res.status(404).json({
-        error: 'Route not found',
-        method: req.method,
-        url: req.originalUrl,
-        path: req.path
-      });
-    });
-
     // Start Express server
     app.listen(port, () => {
       console.log(`\n🎉 ${voiceProvider.toUpperCase()} PODCAST IVR SYSTEM OPERATIONAL!`);
@@ -2341,12 +2328,22 @@ app.post('/api/feeds/activate/:channel', async (req, res) => {
 
 // API endpoint to list available feeds
 app.get('/api/feeds/list', (req, res) => {
-  res.json({
-    activeFeeds: ALL_PODCASTS,
-    extensionFeeds: EXTENSION_PODCASTS,
-    totalActive: Object.keys(ALL_PODCASTS).length,
-    totalExtensions: Object.keys(EXTENSION_PODCASTS).length
-  });
+  console.log('📋 API: /api/feeds/list requested');
+
+  try {
+    const response = {
+      activeFeeds: ALL_PODCASTS || {},
+      extensionFeeds: EXTENSION_PODCASTS || {},
+      totalActive: Object.keys(ALL_PODCASTS || {}).length,
+      totalExtensions: Object.keys(EXTENSION_PODCASTS || {}).length
+    };
+
+    console.log(`✅ Returning ${response.totalActive} active feeds, ${response.totalExtensions} extension feeds`);
+    res.json(response);
+  } catch (error) {
+    console.error('❌ Error in /api/feeds/list:', error);
+    res.status(500).json({ error: 'Failed to retrieve feeds', message: error.message });
+  }
 });
 
 // Debug: Catch all /api/feeds/* requests to see what's happening
@@ -5897,7 +5894,21 @@ app.post('/webhook/call-status', async (req, res) => {
       console.error(`❌ Error ending session ${callSid}:`, error.message);
     }
   }
-  
+
   res.status(200).send('OK');
+});
+
+// 404 handler - must be registered AFTER all routes
+app.use((req, res) => {
+  console.log(`⚠️ 404 - Unhandled route: ${req.method} ${req.originalUrl}`);
+  console.log('Path:', req.path);
+  console.log('Query:', req.query);
+  console.log('Body:', req.body);
+  res.status(404).json({
+    error: 'Route not found',
+    method: req.method,
+    url: req.originalUrl,
+    path: req.path
+  });
 });
 
