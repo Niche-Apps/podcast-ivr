@@ -1539,7 +1539,21 @@ async function startServer() {
     
     // Note: Audio pipeline replaced with direct RSS streaming
     console.log('🎵 Using direct RSS feed streaming instead of local audio pipeline');
-    
+
+    // 404 handler - must be last
+    app.use((req, res) => {
+      console.log(`⚠️ 404 - Unhandled route: ${req.method} ${req.originalUrl}`);
+      console.log('Path:', req.path);
+      console.log('Query:', req.query);
+      console.log('Body:', req.body);
+      res.status(404).json({
+        error: 'Route not found',
+        method: req.method,
+        url: req.originalUrl,
+        path: req.path
+      });
+    });
+
     // Start Express server
     app.listen(port, () => {
       console.log(`\n🎉 ${voiceProvider.toUpperCase()} PODCAST IVR SYSTEM OPERATIONAL!`);
@@ -2335,24 +2349,31 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
-// Test route to debug PUT requests
+// Debug: Catch all /api/feeds/* requests to see what's happening
+app.all('/api/feeds/*', (req, res, next) => {
+  console.log(`🔍 /api/feeds/* - Method: ${req.method}, URL: ${req.url}, Path: ${req.path}`);
+  next();
+});
+
+// Test route to debug PUT/POST requests
 app.all('/api/feeds/update/:channel', (req, res, next) => {
-  console.log(`🔍 Received ${req.method} request for /api/feeds/update/${req.params.channel}`);
+  console.log(`🎯 Received ${req.method} request for /api/feeds/update/${req.params.channel}`);
   console.log('Headers:', req.headers);
   console.log('Body:', req.body);
 
-  if (req.method !== 'PUT') {
-    console.log(`⚠️ Wrong method: ${req.method}, expected PUT`);
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
   }
   next();
 });
 
-// API endpoint to update an existing feed (support both PUT and POST for compatibility)
+// API endpoint to update an existing feed (support multiple methods for compatibility)
 app.put('/api/feeds/update/:channel', updateFeedHandler);
 app.post('/api/feeds/update/:channel', updateFeedHandler);
+app.patch('/api/feeds/update/:channel', updateFeedHandler);
+
+// Also add a simpler endpoint as fallback
+app.all('/api/feed-update/:channel', updateFeedHandler);
 
 async function updateFeedHandler(req, res) {
   console.log(`✅ ${req.method} route handler reached for channel ${req.params.channel}`);
