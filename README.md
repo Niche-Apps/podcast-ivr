@@ -93,11 +93,26 @@ The system is deployed on Railway with automatic deployments from the main branc
 
 ## Recent Updates
 
-- Added comprehensive storage volume management to GUI
-- Implemented file upload/delete capabilities
-- Added cache statistics and management
-- Integrated multer for file uploads
-- Added security restrictions for file operations
+### Dynamic Feed Configuration (NEW)
+- Edit podcast feeds without redeploying server
+- All configuration stored in `podcast-feeds.json` file
+- Real-time updates through GUI or API
+- Separate active and extension feeds management
+- Protected system channels (0, 1, 90, 99)
+
+### Storage Volume Management
+- Browse and manage Railway storage volumes
+- Upload/delete audio files
+- View cache statistics
+- Clear expired cache entries
+
+### API Endpoints for Feed Management
+- `GET /api/feeds/list` - List all configured feeds
+- `GET /api/feeds/config` - Get full configuration
+- `PUT /api/feeds/update/:channel` - Update feed details
+- `DELETE /api/feeds/delete/:channel` - Remove feed
+- `POST /api/feeds/activate/:channel` - Activate extension feed
+- `POST /api/feeds/reload` - Reload configuration from file
 
 ## License
 

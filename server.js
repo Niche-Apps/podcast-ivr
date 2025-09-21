@@ -2335,6 +2335,151 @@ app.get('/api/feeds/list', (req, res) => {
   });
 });
 
+// API endpoint to update an existing feed
+app.put('/api/feeds/update/:channel', async (req, res) => {
+  try {
+    const { channel } = req.params;
+    const { name, rssUrl, description } = req.body;
+
+    // Load current config
+    const configPath = path.join(__dirname, 'podcast-feeds.json');
+    const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    // Check if feed exists in either feeds or extensions
+    let feedLocation = null;
+    if (podcastConfig.feeds[channel]) {
+      feedLocation = 'feeds';
+    } else if (podcastConfig.extensions[channel]) {
+      feedLocation = 'extensions';
+    } else {
+      return res.status(404).json({ error: 'Feed not found' });
+    }
+
+    // Update the feed
+    if (name) podcastConfig[feedLocation][channel].name = name;
+    if (rssUrl) podcastConfig[feedLocation][channel].rssUrl = rssUrl;
+    if (description) podcastConfig[feedLocation][channel].description = description;
+
+    // Update metadata
+    if (!podcastConfig.metadata) {
+      podcastConfig.metadata = {};
+    }
+    podcastConfig.metadata.lastUpdated = new Date().toISOString();
+
+    // Save updated config
+    fs.writeFileSync(configPath, JSON.stringify(podcastConfig, null, 2));
+
+    // Reload in memory
+    if (feedLocation === 'feeds') {
+      ALL_PODCASTS = podcastConfig.feeds;
+    } else {
+      EXTENSION_PODCASTS = podcastConfig.extensions;
+    }
+
+    res.json({
+      success: true,
+      message: `Updated ${podcastConfig[feedLocation][channel].name} on channel ${channel}`,
+      feed: podcastConfig[feedLocation][channel]
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API endpoint to delete a feed
+app.delete('/api/feeds/delete/:channel', async (req, res) => {
+  try {
+    const { channel } = req.params;
+
+    // Don't allow deletion of system channels
+    const protectedChannels = ['0', '1', '90', '99'];
+    if (protectedChannels.includes(channel)) {
+      return res.status(403).json({ error: 'Cannot delete system channels' });
+    }
+
+    // Load current config
+    const configPath = path.join(__dirname, 'podcast-feeds.json');
+    const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    // Check if feed exists and delete it
+    let deleted = false;
+    let feedName = '';
+
+    if (podcastConfig.feeds[channel]) {
+      feedName = podcastConfig.feeds[channel].name;
+      delete podcastConfig.feeds[channel];
+      deleted = true;
+    } else if (podcastConfig.extensions[channel]) {
+      feedName = podcastConfig.extensions[channel].name;
+      delete podcastConfig.extensions[channel];
+      deleted = true;
+    }
+
+    if (!deleted) {
+      return res.status(404).json({ error: 'Feed not found' });
+    }
+
+    // Update metadata
+    if (!podcastConfig.metadata) {
+      podcastConfig.metadata = {};
+    }
+    podcastConfig.metadata.lastUpdated = new Date().toISOString();
+
+    // Save updated config
+    fs.writeFileSync(configPath, JSON.stringify(podcastConfig, null, 2));
+
+    // Reload in memory
+    ALL_PODCASTS = podcastConfig.feeds;
+    EXTENSION_PODCASTS = podcastConfig.extensions;
+
+    res.json({
+      success: true,
+      message: `Deleted ${feedName} from channel ${channel}`
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API endpoint to get the full configuration
+app.get('/api/feeds/config', (req, res) => {
+  try {
+    const configPath = path.join(__dirname, 'podcast-feeds.json');
+    const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    res.json(podcastConfig);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API endpoint to reload configuration from file
+app.post('/api/feeds/reload', async (req, res) => {
+  try {
+    const configPath = path.join(__dirname, 'podcast-feeds.json');
+    const podcastConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    // Reload in memory
+    ALL_PODCASTS = podcastConfig.feeds;
+    EXTENSION_PODCASTS = podcastConfig.extensions;
+
+    console.log(`🔄 Reloaded configuration: ${Object.keys(ALL_PODCASTS).length} active, ${Object.keys(EXTENSION_PODCASTS).length} extensions`);
+
+    res.json({
+      success: true,
+      message: 'Configuration reloaded',
+      stats: {
+        activeFeeds: Object.keys(ALL_PODCASTS).length,
+        extensionFeeds: Object.keys(EXTENSION_PODCASTS).length
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Handle cached file streaming with advanced audio processing
 function handleCachedFileStreaming(cachedFilePath, seekTime, playbackSpeed, res) {
   
